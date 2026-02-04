@@ -1,0 +1,106 @@
+body {
+  font-family: Arial;
+  padding: 20px;
+}
+
+.hidden {
+  display: none;
+}
+
+nav button {
+  margin: 5px;
+}
+
+section {
+  margin-top: 20px;
+  padding: 10px;
+  border: 1px solid #ccc;
+}
+
+.lecture {
+  padding: 6px;
+  margin: 5px 0;
+  background: #eee;
+}
+
+.present { background: #b6f7b6; }
+.absent { background: #f7b6b6; }
+
+#calendarGrid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 10px;
+}
+
+.day {
+  border: 1px solid #ccc;
+  padding: 10px;
+  min-height: 80px;
+}
+
+.lecture {
+  padding: 5px;
+  margin-top: 5px;
+  color: white;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.DBMS { background: #6a5acd; }
+.OS { background: #ff8c00; }
+.CN { background: #2e8b57; }
+
+.national {
+  background: #ff4d4d;
+  color: white;
+}
+
+.gazetted {
+  background: #ffa500;
+}
+
+.restricted {
+  background: #ffd966;
+}
+
+.calendar-header {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 20px;
+}
+
+.calendar-layout {
+  display: flex;
+  gap: 20px;
+}
+
+.weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  font-weight: bold;
+  text-align: center;
+  margin-bottom: 5px;
+}
+
+#calendarGrid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 8px;
+}
+
+.day {
+  border: 1px solid #ccc;
+  min-height: 90px;
+  padding: 5px;
+  font-size: 12px;
+}
+
+#statsPanel {
+  width: 220px;
+  border-left: 2px solid #ddd;
+  padding-left: 10px;
+}
+.stats-item {
+  margin-bottom: 10px;
+}
