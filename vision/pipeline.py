@@ -421,6 +421,7 @@ def parse_notice(blocks, semester, today=None):
             "semester": semester, "subject": subject,
             "topic": clean_topic(text, subject, d_txt),
             "date": d.isoformat(), "task": label, "kind": kind,
+            "source_text": text[:200],  # the original sentence, used as the announcement body
             "confidence": round(min(ln["conf"], 0.99) * (1 if known else 0.85), 2),
             "source_box": ln["box"],
         })
@@ -438,7 +439,7 @@ def parse_notes(blocks, semester, today=None):
     subject, known = find_subject_in(full)
     heading = lines[0]["text"][:60]
     entry = {"semester": semester, "subject": subject, "topic": heading, "date": today.isoformat(),
-             "task": "Revise notes", "kind": "notes",
+             "task": "Revise notes", "kind": "notes", "source_text": full[:200],
              "confidence": round(sum(l["conf"] for l in lines) / len(lines) * (1 if known else 0.8), 2),
              "source_box": lines[0]["box"]}
     return [entry], [{"box": lines[0]["box"], "text": subject, "known": known}]

@@ -42,3 +42,30 @@ A picture is just a grid of numbers. OpenCV loads it as a numpy array: `img[y][x
 5. It prints a table and writes `eval_results.md`. `py eval.py --dir samples` does the same for the synthetic images and writes `eval_results_samples.md`.
 
 How to write a truth file: see `real_samples/README.md`. `make_sample.py` also writes truth files for the synthetic samples, as working examples.
+
+## How Vision connects to the attendance app (the bridge)
+The attendance app (`../index.html`, `app.js`, `data.js`) is plain front-end code with no server and, originally, no saving. Vision is a Python server. They meet in **localStorage**:
+- `main.py` also serves the attendance app at `http://localhost:8000/campus/` (only a fixed list of files, so `.git` and your data are not exposed). Vision lives at `http://localhost:8000/`.
+- Same address and port = same "origin" = the browser gives both pages the same localStorage.
+- `../store.js` defines three keys and two helpers, `loadStore(name, fallback)` and `saveStore(name, value)`. The keys hold the shapes the app already used: `announcements` `[{msg, by}]`, `timetable` `{Monday: [{time, subject, color}]}`, `attendance` `{"2026-1-12-Hindi-07-08": "present"}`.
+- `app.js` loads those at startup and saves after posting an announcement or marking attendance. Before this, a page reload erased everything.
+- **You must open the app through `/campus/`.** Opening `index.html` from a file or Live Server is a different origin and will not see Vision's data.
+
+## Post as announcement
+For notices/notes (not timetables) the page shows a review card under the Study Panel.
+1. Each row is editable (subject, date, topic, task). Edits change the announcement only, not the Study Panel copy.
+2. Entries under 80% confidence get an amber **check this** flag and the Post button refuses until **I checked this** is ticked. "Post all" skips unchecked ones and says how many.
+   *Where confidence comes from:* the OCR score of the line (RapidOCR), multiplied by 0.85 when the subject is not one we know. That 0.85 is a simple rule of ours, not an OCR output.
+3. Posting appends `{msg, by: "Vision", title, date, source, key}` to the announcements key. `msg` is still the text the old page displays (`title · date · original sentence`); `title`, `date`, `source` and `key` are optional extras the old page ignores.
+4. **Duplicates:** `key` = subject + date + topic (lower-case, single spaces). If that key is already in the list, it is not posted again. If you edit the topic, it counts as a different announcement.
+5. The Announcements tab re-reads the saved list every time it opens, so new posts appear without a reload.
+
+## Small fixes made to the attendance app (one commit each)
+| Fix | Why |
+|---|---|
+| Removed the `alert("JS is connected")` | It popped up on every page load. |
+| `prevMonth()` / `nextMonth()` added | The buttons called functions that did not exist. |
+| `parseEndTime()` | `data.js` times are `"07-08"`, the code expected `"09:00"`, so no lecture ever counted as finished and attendance could not be marked. Hours below 7 are treated as afternoon (`"01"` = 1 pm). |
+| `by: currentRole` | Announcements showed "— undefined". |
+| Re-render announcements when the tab opens | The list was blank until you posted. |
+**Not fixed:** `checkWarnings()` reads a variable that only exists inside `renderCalendar()`, so after you mark attendance the browser console shows `subjectCount is not defined` and the "below 75%" alert never appears. Marking itself still works.

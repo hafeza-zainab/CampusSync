@@ -46,6 +46,16 @@
   .topic { flex:1 1 100%; }
   #empty { color:var(--dim); text-align:center; padding:30px 0; }
   #err { color:var(--pink); margin-top:10px; }
+  /* review & post card */
+  #review { margin:0 24px 32px; display:none; }
+  .hint { color:var(--dim); margin:0 0 12px; }
+  .rrow { display:grid; grid-template-columns: 1fr 140px 1.4fr 1fr auto; gap:8px; align-items:center; padding:10px 0; border-top:1px solid var(--line); }
+  .rrow input[type=text], .rrow input[type=date] { width:100%; background:#12162a; color:var(--txt); border:1px solid var(--line); border-radius:6px; padding:6px 8px; font:inherit; }
+  .rrow.low { background:#ffc85710; }
+  .rmeta { grid-column:1 / -1; display:flex; gap:12px; align-items:center; font-size:13px; color:var(--dim); }
+  .chip.warn { background:#ffc85733; color:var(--amber); }
+  .ok { color:var(--green); } .bad { color:var(--pink); }
+  @media (max-width:900px){ .rrow { grid-template-columns:1fr; } }
 </style>
 </head>
 <body>
@@ -83,6 +93,15 @@
   </section>
 </main>
 
+<!-- Only shown for notices / notes (not timetables) -->
+<section class="card" id="review">
+  <h2>3 · Review &amp; post as announcement</h2>
+  <p class="hint">Fix anything that is wrong, then post. Entries marked <span class="chip warn">check this</span> need "I checked this" ticked first.
+    Edits here change the announcement only, not the Study Panel copy.</p>
+  <div id="reviewRows"></div>
+  <div class="row"><button class="primary" id="postAll">Post all</button><span id="postMsg"></span></div>
+</section>
+
 <script>
 const $ = id => document.getElementById(id);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -96,7 +115,11 @@ function caption(text, sub) {
 
 // ---- upload handling -------------------------------------------------
 $('drop').onclick = () => $('file').click();
-$('file').onchange = e => e.target.files[0] && run(e.target.files[0]);
+$('file').onchange = e => {
+  const f = e.target.files[0];
+  e.target.value = '';   // forget the choice, otherwise picking the same file again does nothing
+  if (f) run(f);
+};
 ['dragover','dragenter'].forEach(ev => $('drop').addEventListener(ev, e => { e.preventDefault(); $('drop').classList.add('over'); }));
 ['dragleave','drop'].forEach(ev => $('drop').addEventListener(ev, e => { e.preventDefault(); $('drop').classList.remove('over'); }));
 $('drop').addEventListener('drop', e => e.dataTransfer.files[0] && run(e.dataTransfer.files[0]));
@@ -111,7 +134,7 @@ async function run(file, demo) {
   if (busy) return; busy = true; $('err').textContent = '';
   try {
     caption('1 · Upload', file.name);
-    $('steps').innerHTML = ''; $('legend').style.display = 'none';
+    $('steps').innerHTML = ''; $('legend').style.display = 'none'; $('review').style.display = 'none';
     if (file.type === 'application/pdf') { $('stage').style.display = 'none'; }
     else { $('pic').src = URL.createObjectURL(file); $('stage').style.display = 'block'; clearCanvas(); }
     await sleep(demo ? 1500 : 300);
@@ -155,6 +178,7 @@ async function run(file, demo) {
     caption('6 · Auto-tagged into Study Panel', `${r.added} new entries · Semester → Subject → Topic → Date`);
     const all = await (await fetch('/api/entries')).json();
     renderPanel(all, new Set(r.entries.filter(e => e.is_new).map(e => e.subject + e.date + e.topic)));
+    showReview(r.entries.filter(e => e.kind !== 'lecture'), file.name);   // timetables have nothing to announce
   } catch (e) {
     $('err').textContent = 'Error: ' + e.message; caption('Something went wrong');
   } finally { busy = false; }
@@ -194,6 +218,89 @@ function renderPanel(entries, fresh = new Set()) {
   }
   $('panel').innerHTML = html;
 }
+
+// ---- Review & post as announcement ------------------------------------
+// The attendance app lives at /campus/ on the same server, so both pages share localStorage.
+// The key must match STORE_KEYS.announcements in ../store.js.
+const ANN_KEY = 'campussync.announcements';
+const LOW_CONFIDENCE = 0.80;   // below this an entry is flagged "check this"
+let reviewRows = [];           // one {entry, source, els} per row on screen
+
+function readAnnouncements() {
+  try { return JSON.parse(localStorage.getItem(ANN_KEY)) || []; } catch (e) { return []; }
+}
+function writeAnnouncements(list) { localStorage.setItem(ANN_KEY, JSON.stringify(list)); }
+
+// Same subject + date + topic = same announcement (ignores capitals and extra spaces)
+function dedupeKey(subject, date, topic) {
+  return [subject, date, topic].map(s => String(s).trim().toLowerCase().replace(/\s+/g, ' ')).join('|');
+}
+
+function showReview(entries, sourceName) {
+  reviewRows = [];
+  $('postMsg').textContent = '';
+  $('reviewRows').innerHTML = '';
+  $('review').style.display = entries.length ? 'block' : 'none';
+  entries.forEach(entry => {
+    const low = entry.confidence < LOW_CONFIDENCE;
+    const el = document.createElement('div');
+    el.className = 'rrow' + (low ? ' low' : '');
+    el.innerHTML = `
+      <input type="text" class="f-subject" value="${esc(entry.subject)}" aria-label="subject">
+      <input type="date" class="f-date" value="${esc(entry.date)}" aria-label="date">
+      <input type="text" class="f-topic" value="${esc(entry.topic)}" aria-label="topic">
+      <input type="text" class="f-task" value="${esc(entry.task)}" aria-label="task">
+      <button class="post">Post as announcement</button>
+      <div class="rmeta">
+        <span class="chip">${Math.round(entry.confidence * 100)}% sure</span>
+        ${low ? '<span class="chip warn">check this</span><label><input type="checkbox" class="f-ok"> I checked this</label>' : ''}
+        <span class="status"></span>
+      </div>`;
+    const row = { entry, source: sourceName, el };
+    el.querySelector('.post').onclick = () => postRow(row);
+    reviewRows.push(row);
+    $('reviewRows').appendChild(el);
+  });
+}
+
+// Try to post one row. Returns 'posted' | 'duplicate' | 'needs-check' | 'done'.
+function postRow(row) {
+  const q = sel => row.el.querySelector(sel);
+  const status = q('.status');
+  if (row.posted) return 'done';
+  if (q('.f-ok') && !q('.f-ok').checked) {
+    status.innerHTML = '<span class="bad">tick "I checked this" first</span>';
+    return 'needs-check';
+  }
+  const subject = q('.f-subject').value.trim(), date = q('.f-date').value;
+  const topic = q('.f-topic').value.trim(), task = q('.f-task').value.trim();
+  const key = dedupeKey(subject, date, topic);
+  const list = readAnnouncements();
+  if (list.some(a => a.key === key)) {
+    status.innerHTML = '<span class="bad">already posted</span>';
+    return 'duplicate';
+  }
+  const title = `${subject}: ${task}`;
+  const body = row.entry.source_text || topic;
+  list.push({
+    msg: `${title} · ${date} · ${body}`,   // what the existing Announcements page displays
+    by: 'Vision',
+    title, date, source: row.source, key  // optional extras; the old page ignores them
+  });
+  writeAnnouncements(list);
+  row.posted = true;
+  q('.post').disabled = true;
+  status.innerHTML = '<span class="ok">posted ✓</span> <a href="/campus/" target="_blank" style="color:var(--blue)">open app</a>';
+  return 'posted';
+}
+
+$('postAll').onclick = () => {
+  const count = { posted: 0, duplicate: 0, 'needs-check': 0, done: 0 };
+  reviewRows.forEach(r => count[postRow(r)]++);
+  $('postMsg').innerHTML = ` ${count.posted} posted` +
+    (count.duplicate ? `, ${count.duplicate} already posted` : '') +
+    (count['needs-check'] ? `, <span class="bad">${count['needs-check']} need checking</span>` : '');
+};
 
 fetch('/api/entries').then(r => r.json()).then(e => renderPanel(e)).catch(() => {});
 </script>
