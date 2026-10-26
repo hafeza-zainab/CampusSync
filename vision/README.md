@@ -14,31 +14,34 @@ Re-typing a timetable and a list of deadlines into separate tools every semester
 4. **Course catalog**: pick a course and semester and only that semester's subjects are searched (`data/catalog.json`: courses → semesters → subjects → teacher/room).
 
 ## CampusSync as one product
-CampusSync is a college app you open at `http://localhost:8000/campus/`. Vision (the screenshot reader) lives inside it as the **Import from screenshot** tab and feeds the other features, so a timetable or a notice does not have to be typed by hand.
+CampusSync is a college app you open at `http://localhost:8000/campus/`. Vision (the screenshot reader) is built into it as an **Import from screenshot** card at the top of the Study Panel, and feeds the other features, so a timetable or a notice does not have to be typed by hand.
 
 | Feature | What works | How Vision feeds it |
 |---|---|---|
-| **Login with college ID** | Log in with an ID such as `DEMO-CS-001`. The ID is the identity used for attendance, announcement authors and chat senders. No phone number, email or name is asked. | |
-| **Attendance** | Calendar by month, day and subject. Click a lecture to mark Present / Absent / Clear: attended is green, not attended red, unmarked grey. The side panel shows, per subject, lectures held, attended, absent, unmarked, this month's total and the percentage; subjects under 75% are flagged with a warning banner. The Attendance tab shows the same numbers as a table. Marks are stored per college ID. | A timetable screenshot replaces the weekly timetable after a preview and a confirm click. Marks are never edited; Undo restores the old timetable. |
-| **Announcements** | Post an announcement; the author is your college ID and role. | Notice screenshots are reviewed, edited and posted as announcements (duplicates blocked, low-confidence entries need a tick). |
+| **Login with college ID + password** | Log in with an ID such as `DEMO-CS-001` and a password. The ID is the identity used for attendance, announcement authors and chat senders, and the account decides the role (CR, ACR or student). No phone number, email or name is asked. | |
+| **Attendance** | Calendar by month, day and subject. Click a lecture to mark Present / Absent / Clear: attended is green, not attended red, unmarked grey. The side panel shows, per subject, lectures held, attended, absent, unmarked, this month's total and the percentage; subjects under 75% get a warning banner. The Attendance tab shows the same numbers as a table. Marks are stored per college ID. The calendar is **semester-aware**: each date shows the lectures of the semester that contains it; a semester that has not started is greyed out with no stats. | A timetable screenshot replaces the weekly timetable after a preview and a confirm click. Marks are never edited; Undo restores the old timetable. |
+| **Announcements** | The CR and ACR can post; students can only read (the box is hidden and a note says why). The author is the college ID and role. | Notice screenshots are reviewed, edited and posted as announcements (duplicates blocked, low-confidence entries need a tick). |
 | **Study Panel** | Upload a study material tagged by Semester, Subject, Topic and Date (file optional, up to 1 MB each; bigger files are refused with a message). Filters for semester, subject, topic text and a date range. | Every entry Vision reads is added here with its source ("Vision · file name") and an amber "check this" when Vision was under 80% sure. |
 | **Chat** | Class group and one-to-one chats. **No free text:** every message is a template with only Subject, Date and Topic: *Request notes* (answered with "I have these notes"), *Notes shared*, *Ask a doubt* (answered with "I can help"). | The lecture rows on the Vision page have a "Request notes" link that opens the form pre-filled; you review it and press Send. |
-| **Import from screenshot** | The Vision page inside the app, plus a "← Back to CampusSync" link on the standalone Vision page. | |
+| **Demo helpers** | Each demo account is seeded with different attendance (one excellent, one with a weak subject, one struggling, one mostly unmarked). The login screen has **▶ Run 60-second demo** (the app clicks and types by itself with a caption bar, as the CR and then as a student) and **↺ Reset demo data**. | |
 
-**How this was tested.** "Tested" means these scripted checks pass: 44 unit checks (`tests/unit.py`), 169 headless-Chromium checks (`tests/e2e.py`) and a 9-check walkthrough of the whole flow (`tests/demo_walkthrough.py`), all on synthetic images and demo accounts. They have not been run on real student data, in browsers other than Chromium, or on a phone.
+**Demo accounts** (placeholder IDs, not real people): `DEMO-CS-001` CR, `DEMO-CS-002` ACR, `DEMO-CS-003` and `DEMO-CS-004` students; the passwords are shown on the login screen.
+
+**How this was tested.** `tests/smoke_app.py` runs 16 checks against the current app in headless Chromium: login and wrong password, roles, tabs, the Import card, notice → announcements, timetable → calendar, student read-only, template-only chat, and the semester calendar. The 60-second demo button was run to the end once (no page errors, no popups). Also: 44 unit checks of the extraction rules (`tests/unit.py`) and the Vision accuracy tool on 12 synthetic images (see Results). Everything uses synthetic images and demo accounts. **Not tested:** real student data, browsers other than Chromium, a phone, screen readers. `tests/e2e.py` (169 checks) and `tests/demo_walkthrough.py` were written for an earlier version of the app (no password, a separate Import tab, one semester) and **no longer match it**; they are not evidence for the current app.
 
 **Read these limits:**
-- **The chat uses simulated users in one browser, with no server sync.** The four demo accounts (`DEMO-CS-001` to `DEMO-CS-004`, placeholder IDs, not real people) are chosen at login or with a "Demo only" switch; two tabs of the same browser stay in sync. It is **not** real-time multi-user chat between different computers or browsers.
-- **Login is by ID only (no password) in the committed code.** Anyone can type any well-formed ID. This is a demo identity, not authentication.
+- **Passwords are only a demo.** They are written in plain text in the page's JavaScript (`store.js`) and shown on the login screen. This is **not secure authentication**; a real deployment needs a server that checks them.
+- **The chat uses simulated users in one browser, with no server sync.** Two tabs of the same browser stay in sync. It is **not** real-time multi-user chat between different computers or browsers.
 - **Everything is stored in the browser's localStorage** (no server database): it is per browser, a few MB in total, and anyone using that browser profile can see or edit it. Clearing site data deletes it.
+- **Semesters 1-3, 5 and 6 in `data.js` are placeholders** (invented dates and subjects). Only Semester 4 comes from your real timetable.
 - **No real-image accuracy has been measured yet** (see Results).
-- The attendance app must be opened through the Vision server (`/campus/`); that is how the two share data.
+- The app must be opened through the Vision server (`/campus/`); that is how the two share data. After changing `vision/main.py`, restart the server.
 
 **In progress / future work (not built):**
-- Real accounts, passwords and a server, and chat between real users on different devices.
-- Study Panel visibility settings (private / class / selected students) and file preview. The old standalone `studypanel.html` form is unused (the Study Panel tab replaced it).
+- Real accounts and a server, and chat between real users on different devices.
+- Study Panel visibility settings (private / class / selected students) and file preview. The old standalone `studypanel.html` form is unused.
 - Handwriting, SAM-style segmentation for tables without lines, and an LLM extraction pass.
-- `data/catalog.json` is seeded from `data.js`, which holds subject names only. Real teachers, rooms and the semester number must be added by hand; demo courses A and B are fake placeholders.
+- `data/catalog.json` (used by Vision's subject matching) is seeded from the old `data.js` subjects; real teachers, rooms and semester ids must be added by hand. Demo courses A and B in it are fake placeholders.
 
 ## How it works
 | Stage | Technique |
@@ -103,12 +106,13 @@ cd vision
 pip install -r requirements.txt        # tested in a fresh virtual environment on Windows / Python 3.14
 python make_sample.py                  # creates samples/ (synthetic test images)
 python -m uvicorn main:app --port 8000
-# the CampusSync app:  http://localhost:8000/campus/   (log in with e.g. DEMO-CS-001)
+# the CampusSync app:  http://localhost:8000/campus/   (click "Run 60-second demo", or log in as DEMO-CS-001 / cr-demo)
 # Vision on its own:  http://localhost:8000/          (click "Run demo")
+# restart the server after changing vision/main.py
 ```
 Chat screenshots (demo users, seeded messages) are in [`../chat_screenshots/`](../chat_screenshots), made by `py tests/chat_screenshots.py`.
-Tests (with the server running): `py tests/unit.py`, `py tests/measure.py` (prints the measurements behind the limitations), `py tests/e2e.py` and `py tests/demo_walkthrough.py` (both need `pip install playwright` and `python -m playwright install chromium`). Accuracy tool: `py eval.py --dir samples` (synthetic) or `py eval.py` (your images in `real_samples/`).
-Code walkthrough: [HOW_IT_WORKS.md](HOW_IT_WORKS.md) · Vision-only demo plan: [DEMO_SCRIPT.md](DEMO_SCRIPT.md) · Proposed integrated demo (not final): [DEMO_FLOW_PROPOSAL.md](DEMO_FLOW_PROPOSAL.md) · Pre-recording checklist: [CHECKLIST.md](CHECKLIST.md) · Claim-by-claim evidence: [CLAIMS_AUDIT.md](CLAIMS_AUDIT.md)
+Tests (with the server running): `py tests/unit.py`, `py tests/measure.py` (prints the measurements behind the limitations), and `py tests/smoke_app.py` (needs `pip install playwright` and `python -m playwright install chromium`). `tests/e2e.py` and `tests/demo_walkthrough.py` target an earlier version of the app. Accuracy tool: `py eval.py --dir samples` (synthetic) or `py eval.py` (your images in `real_samples/`).
+Code walkthrough: [HOW_IT_WORKS.md](HOW_IT_WORKS.md) · Vision-only demo plan: [DEMO_SCRIPT.md](DEMO_SCRIPT.md) · Claim-by-claim evidence: [CLAIMS_AUDIT.md](CLAIMS_AUDIT.md)
 
 ## Built with
 python · opencv · rapidocr · pymupdf · pillow · fastapi · javascript

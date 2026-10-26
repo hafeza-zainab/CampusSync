@@ -1,5 +1,7 @@
 # Claims audit: README.md, HOW_IT_WORKS.md, DEMO_SCRIPT.md
 
+> **Note:** this document describes an earlier version of the app (no password, a separate Import tab, one semester) and has not been updated. The README is current.
+
 Evidence key: **U** = `tests/unit.py` (44 checks) · **E** = `tests/e2e.py` (169 browser checks) · **W** = `tests/demo_walkthrough.py` (9 checks) · **V** = `eval_results_samples.md` (`py eval.py --dir samples`, synthetic) · **M** = `tests/measure.py` (printed measurements) · **code** = the cited function.
 "Synthetic" = images drawn by `make_sample.py`. **Nothing here is evidence about real student images.**
 

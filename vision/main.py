@@ -100,7 +100,7 @@ def index():
 # the Vision page share one origin = one localStorage (see ../store.js). Only these files are
 # served, so nothing else in the project folder (.git, data/, ...) is exposed.
 CAMPUS_DIR = os.path.dirname(HERE)
-CAMPUS_FILES = {"index.html", "app.js", "data.js", "store.js", "style.css", "studypanel.html", "chatbot.html", "chat.js", "chat.css", "import.js", "import.css", "study.js", "study.css"}
+CAMPUS_FILES = {"index.html", "app.js", "data.js", "store.js", "style.css", "studypanel.html", "chatbot.html", "chat.js", "chat.css", "import.js", "import.css", "study.js", "study.css", "demo.js", "tour.js"}
 
 
 @app.get("/campus")
@@ -113,7 +113,8 @@ def campus_redirect():
 def campus(name: str = "index.html"):
     if name not in CAMPUS_FILES:
         raise HTTPException(404, "Not found")
-    return FileResponse(os.path.join(CAMPUS_DIR, name))
+    # no-cache: the browser re-checks every file, so edits to the app show up on a normal refresh
+    return FileResponse(os.path.join(CAMPUS_DIR, name), headers={"Cache-Control": "no-cache"})
 
 
 app.mount("/samples", StaticFiles(directory=os.path.join(HERE, "samples")), name="samples")

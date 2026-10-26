@@ -12,15 +12,15 @@
     <h2>College Attendance</h2>
     <label for="username">College ID</label>
     <input type="text" id="username" placeholder="College ID, e.g. DEMO-CS-001" autocomplete="off" maxlength="20">
-    <select id="role">
-      <option value="student">Student</option>
-      <option value="cr">CR</option>
-      <option value="acr">ACR</option>
-    </select>
+    <label for="password">Password</label>
+    <input type="password" id="password" autocomplete="off">
     <button onclick="login()">Enter</button>
+    <button type="button" id="tourStart" class="tour-start">▶ Run 60-second demo</button>
+    <button type="button" id="resetDemo" class="tour-start reset">↺ Reset demo data</button>
     <p id="loginError" role="alert"></p>
-    <p class="login-hint">Demo accounts (placeholder IDs, not real people): DEMO-CS-001 to DEMO-CS-004.
-      Only a college ID is asked for: no phone number or email.</p>
+    <p class="login-hint">Demo accounts (placeholder IDs, not real people):<br>
+      DEMO-CS-001 (CR, excellent attendance) / cr-demo<br>DEMO-CS-002 (ACR, DBMS low) / acr-demo<br>
+      DEMO-CS-003 (student, struggling) / student-demo<br>DEMO-CS-004 (student, many unmarked) / student-demo</p>
   </div>
 
   <!-- DASHBOARD -->
@@ -79,6 +79,7 @@
     <!-- ANNOUNCEMENTS -->
     <section id="announcements" class="tab hidden">
       <h3>Announcements</h3>
+      <p id="announceNote" class="not-applicable hidden">Only the CR and ACR can post announcements. You can read them here.</p>
       <div class="announce-input">
         <input type="text" id="msg" placeholder="Type announcement...">
         <button onclick="postAnnouncement()">Post</button>
@@ -90,8 +91,10 @@
   <script src="store.js"></script>
   <script src="data.js"></script>
   <script src="app.js"></script>
+  <script src="demo.js"></script>
   <script src="chat.js"></script>
   <script src="import.js"></script>
   <script src="study.js"></script>
+  <script src="tour.js"></script>
 </body>
 </html>

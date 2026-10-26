@@ -1,5 +1,7 @@
 # Proposed integrated demo flow (about 90 seconds) — PROPOSAL, not final
 
+> **Note:** this document describes an earlier version of the app (no password, a separate Import tab, one semester) and has not been updated. The README is current.
+
 Nothing here is final. **No overlay text is written yet**, as agreed: it comes after you approve the flow. Every step below has been run by `py tests/demo_walkthrough.py` (9/9 checks passed); the screenshots from that run are in the report. The demo uses **synthetic** images and **demo accounts**; say so on screen or in the Devpost text.
 
 ## What you need ready

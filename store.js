@@ -44,12 +44,13 @@ function saveStore(name, value, suffix) {
 
 // ---------------------------------------------------------------- login: college IDs
 // DEMO accounts. These IDs are PLACEHOLDERS for the demo, not real people's college IDs.
-// Any other well-formed ID can log in too; it simply has no demo name.
+// The role (student / cr / acr) belongs to the account. DEMO ONLY: passwords sit in plain text here;
+// a real deployment must check them on a server.
 const DEMO_USERS = [
-  { id: "DEMO-CS-001", name: "Zainab" },
-  { id: "DEMO-CS-002", name: "Aarav" },
-  { id: "DEMO-CS-003", name: "Meera" },
-  { id: "DEMO-CS-004", name: "Kabir" }
+  { id: "DEMO-CS-001", name: "Zainab", role: "cr", password: "cr-demo" },
+  { id: "DEMO-CS-002", name: "Aarav", role: "acr", password: "acr-demo" },
+  { id: "DEMO-CS-003", name: "Meera", role: "student", password: "student-demo" },
+  { id: "DEMO-CS-004", name: "Kabir", role: "student", password: "student-demo" }
 ];
 
 const ID_PATTERN = /^[A-Z0-9][A-Z0-9-]{3,19}$/;       // 4-20 characters: capitals, digits, hyphens

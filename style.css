@@ -153,3 +153,111 @@ section {
 #loginError { color: #b00020; font-weight: bold; min-height: 18px; margin: 6px 0 0; }
 .login-hint { font-size: 13px; color: #555; max-width: 360px; }
 .login-container label { display: block; font-weight: bold; margin-bottom: 4px; }
+
+/* ===== Presentation polish (overrides above; keeps all class names) ===== */
+:root {
+  --bg: #f4f6fb; --card: #fff; --ink: #1d2433; --muted: #5b6475; --line: #e1e5ee;
+  --brand: #3b5bdb; --brand-dark: #2b44b0; --radius: 10px; --shadow: 0 2px 10px rgba(30, 40, 80, .08);
+}
+* { box-sizing: border-box; }
+body {
+  font-family: "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif;
+  background: var(--bg); color: var(--ink); line-height: 1.45;
+  max-width: 1180px; margin: 0 auto; padding: 20px 16px 40px;
+}
+h2, h3, h4 { margin: 0 0 10px; }
+a { color: var(--brand); }
+
+button {
+  font: inherit; cursor: pointer; padding: 7px 14px; border-radius: 8px;
+  border: 1px solid var(--line); background: #fff; color: var(--ink); transition: background .15s, box-shadow .15s;
+}
+button:hover { background: #eef2ff; border-color: #c5d0f5; }
+button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--brand); outline-offset: 2px; }
+input[type=text], input[type=password], input[type=search], input[type=date], input:not([type]), select, textarea {
+  font: inherit; padding: 8px 10px; border: 1px solid #c9cfdd; border-radius: 8px; background: #fff; max-width: 100%;
+}
+
+/* Login */
+.login-container {
+  max-width: 420px; margin: 8vh auto 0; padding: 28px; background: var(--card);
+  border-radius: 14px; box-shadow: var(--shadow); border-top: 5px solid var(--brand);
+}
+.login-container h2 { font-size: 24px; text-align: center; margin-bottom: 18px; }
+.login-container input, .login-container select { width: 100%; margin-bottom: 12px; }
+.login-container > button { width: 100%; background: var(--brand); border-color: var(--brand); color: #fff; font-weight: 600; padding: 10px; }
+.login-container > button:hover { background: var(--brand-dark); }
+.login-hint { max-width: none; }
+
+/* Header + tabs */
+#dashboard > header {
+  display: flex; justify-content: space-between; align-items: center;
+  background: linear-gradient(120deg, var(--brand), #6741d9); color: #fff;
+  padding: 14px 20px; border-radius: var(--radius); box-shadow: var(--shadow);
+}
+#dashboard > header h3 { margin: 0; font-size: 18px; }
+.logout-btn { background: rgba(255,255,255,.15); color: #fff; border-color: rgba(255,255,255,.4); }
+.logout-btn:hover { background: rgba(255,255,255,.28); border-color: #fff; }
+nav.tab-nav, nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0 0; }
+nav button { margin: 0; padding: 9px 16px; font-weight: 600; border-radius: 999px; box-shadow: var(--shadow); }
+nav button:hover { background: var(--brand); border-color: var(--brand); color: #fff; }
+
+section {
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+  box-shadow: var(--shadow); padding: 18px; margin-top: 16px;
+}
+
+/* Calendar */
+.calendar-header { margin-bottom: 4px; }
+.calendar-header h3 { margin: 0; min-width: 180px; text-align: center; }
+.calendar-hint { text-align: center; color: var(--muted); margin: 0 0 12px; font-size: 14px; }
+.calendar-layout { align-items: flex-start; }
+.calendar-main { flex: 1; min-width: 0; }
+.weekdays { color: var(--muted); font-size: 13px; text-transform: uppercase; letter-spacing: .04em; }
+#calendarGrid { gap: 6px; }
+.day { background: #fbfcff; border: 1px solid var(--line); border-radius: 8px; min-height: 96px; padding: 6px; }
+.day:hover { border-color: #b8c4f2; }
+.lecture { cursor: pointer; border-radius: 6px; padding: 4px 6px; margin-top: 4px; font-weight: 600; }
+#statsPanel { width: 240px; flex: none; border-left: 0; padding: 12px; background: #f8f9fe; border: 1px solid var(--line); border-radius: var(--radius); }
+.stat-row { background: #fff; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+.attend-table { width: 100%; border-radius: 8px; overflow: hidden; }
+.attend-table th { background: #eef2ff; }
+.attend-table th, .attend-table td { border-color: var(--line); padding: 8px 12px; }
+
+/* Announcements */
+.announce-input { display: flex; gap: 8px; margin-bottom: 14px; }
+.announce-input input { flex: 1; min-width: 0; }
+.announce-input button { background: var(--brand); border-color: var(--brand); color: #fff; font-weight: 600; }
+#announceList > * { padding: 10px 14px; margin-bottom: 8px; background: #f8f9fe; border-left: 4px solid var(--brand); border-radius: 6px; }
+
+/* Study panel */
+.study-form, .study-right, .study-card { border-radius: var(--radius); }
+.study-card { box-shadow: 0 1px 4px rgba(30,40,80,.06); }
+.study-btn.primary { background: var(--brand); border-color: var(--brand); }
+
+/* Mobile */
+@media (max-width: 800px) {
+  .calendar-layout { flex-direction: column; }
+  #statsPanel { width: 100%; }
+  .day { min-height: 64px; font-size: 11px; padding: 3px; }
+  #calendarGrid, .weekdays { gap: 3px; }
+  section { padding: 12px; }
+}
+.day.no-semester { background: #f0f1f5; opacity: .6; }
+.day.upcoming-semester { background: #e6e7ec; opacity: .75; }
+.lecture.upcoming { cursor: not-allowed; font-style: italic; }
+.not-applicable { color: var(--muted); font-style: italic; background: #f0f1f5; padding: 10px; border-radius: 8px; }
+
+/* 60-second demo tour */
+.login-container > button.tour-start { margin-top: 10px; width: 100%; background: #fff; color: var(--brand); border: 2px solid var(--brand); font-weight: 700; }
+.login-container > button.tour-start:hover { background: #eef2ff; }
+#tourBar { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 100000; width: min(720px, calc(100% - 24px));
+  background: #1d2433; color: #fff; border-radius: 12px; padding: 10px 14px 12px; box-shadow: 0 6px 24px rgba(0,0,0,.35); }
+#tourBar .tour-row { display: flex; align-items: center; gap: 12px; }
+#tourBar .tour-text { flex: 1; font-size: 15px; font-weight: 600; }
+#tourBar .tour-time { font-variant-numeric: tabular-nums; color: #aab4d4; font-size: 13px; }
+#tourBar button { background: #e74c3c; border-color: #e74c3c; color: #fff; padding: 4px 12px; }
+#tourBar .tour-track { height: 5px; background: #3a4560; border-radius: 3px; margin-top: 8px; overflow: hidden; }
+#tourBar .tour-fill { height: 100%; width: 0; background: #7c9cff; transition: width .25s linear; }
+.tour-focus { outline: 4px solid #ffb703 !important; outline-offset: 3px; box-shadow: 0 0 0 8px rgba(255,183,3,.25) !important; transition: outline .15s; }
+.hidden { display: none !important; }

@@ -15,6 +15,23 @@
   /* shown inside the campus app's "Import" tab (?embedded=1): the app's own nav is above, so no header and no back link */
   body.embedded header { display:none; }
   body.embedded #caption { margin-top:8px; }
+  /* embedded in the app's Study Panel: use the app's light look so it does not look like a different product */
+  body.embedded { --bg:#ffffff; --card:#ffffff; --line:#e1e5ee; --txt:#1d2433; --dim:#5b6475; --blue:#3b5bdb; --green:#1b7f4b; --amber:#8a5a00; --pink:#c0392b;
+                  font-family:"Segoe UI",system-ui,-apple-system,Roboto,Arial,sans-serif; font-size:14px; }
+  body.embedded #caption { background:#eef2ff; border:1px solid var(--line); font-size:17px; min-height:44px; margin:8px 0 0; padding:10px 14px; }
+  body.embedded main { padding:12px 0 20px; margin:0; } body.embedded #review, body.embedded #attend { margin:0 0 20px; }
+  body.embedded .card { border-radius:10px; box-shadow:0 2px 10px rgba(30,40,80,.08); }
+  body.embedded .card h2 { font-size:12px; }
+  body.embedded button, body.embedded select { background:#fff; color:var(--txt); border-color:#c9cfdd; border-radius:8px; }
+  body.embedded button:hover { filter:none; background:#eef2ff; }
+  body.embedded button.primary { background:var(--blue); border-color:var(--blue); color:#fff; }
+  body.embedded #drop:hover, body.embedded #drop.over { border-color:var(--blue); background:#eef2ff; color:var(--txt); }
+  body.embedded #steps li, body.embedded .subject > div:first-child, body.embedded .rrow input[type=text], body.embedded .rrow input[type=date] { background:#f8f9fe; color:var(--txt); }
+  body.embedded #steps li { color:var(--dim); } body.embedded #steps li.on { color:var(--txt); }
+  body.embedded .chip { background:#eceff4; color:#333; }
+  body.embedded .chip.date { color:#8a5a00; } body.embedded .chip.task { color:#b02a52; } body.embedded .chip.sem { color:var(--blue); }
+  body.embedded .chip.warn { background:#fff3cd; color:#6b4600; } body.embedded .chip.add { background:#e2f3e8; color:#14532d; } body.embedded .chip.del { background:#fde7e7; color:#8a1c14; }
+  body.embedded .entry.new { background:#e2f3e8; } body.embedded .rrow.low { background:#fff8e1; } body.embedded .box.warnbox { background:#fff8e1; }
   #caption { margin:16px 24px 0; padding:14px 20px; border-radius:12px; background:linear-gradient(90deg,#1d2a55,#183c3c);
              font-size:22px; font-weight:600; min-height:56px; display:flex; align-items:center; }
   #caption small { font-weight:400; color:var(--dim); font-size:15px; margin-left:10px; }

@@ -1,5 +1,7 @@
 # How it works (the "re-learning my own code" version)
 
+> **Note:** this document describes an earlier version of the app (no password, a separate Import tab, one semester) and has not been updated. The README is current.
+
 A picture is just a grid of numbers. OpenCV loads it as a numpy array: `img[y][x] = (blue, green, red)`. Everything below is arithmetic on that array.
 
 ## Files

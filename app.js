@@ -4,9 +4,24 @@ let attendance = {};   // loaded at login: each college ID has its own marks (ke
 // Load saved data (store.js). Vision writes to the same keys.
 announcements = loadStore("announcements", []);
 
-// timetable is a const in data.js, so we replace its CONTENTS instead of the variable.
-// The data.js version is remembered so "Undo" in Vision can bring it back.
-const defaultTimetable = JSON.parse(JSON.stringify(timetable));
+// Semesters (data.js): the calendar shows a semester's lectures only between its start and end dates.
+function parseDay(text) { return new Date(text + "T00:00:00"); }
+function semesterOn(date) {
+  return semesters.find(s => date >= parseDay(s.start) && date <= parseDay(s.end)) || null;
+}
+// The semester running today; before the first or after the last one, the nearest.
+function currentSemester() {
+  const today = new Date();
+  return semesterOn(today)
+    || semesters.filter(s => parseDay(s.start) <= today).pop()
+    || semesters[0];
+}
+const activeSemester = currentSemester();
+
+// "timetable" is a const in data.js (Semester 4), so we replace its CONTENTS instead of the variable.
+// It always holds the timetable of the semester running today (saved by Vision, else that semester's default).
+// The default is remembered so "Undo" in Vision can bring it back.
+const defaultTimetable = JSON.parse(JSON.stringify(activeSemester.timetable));
 function applySavedTimetable() {
   const source = loadStore("timetable", null) || defaultTimetable;
   Object.keys(timetable).forEach(day => delete timetable[day]);
@@ -20,25 +35,36 @@ let currentDate = new Date(new Date().getFullYear(), new Date().getMonth()); // 
 let subjectCount = {};     // lectures already held this month (their end time has passed)
 let subjectPresent = {};   // held lectures marked present
 let subjectAbsent = {};    // held lectures marked absent
+let notStartedSemester = null;   // a semester shown this month that starts in the future
 let subjectScheduled = {}; // all lectures in the timetable this month, held or not
 let currentUser = null;
 let currentRole = null;
 
 function login() {
   const id = normalizeId(document.getElementById("username").value);   // college ID, e.g. DEMO-CS-001
-  const role = document.getElementById("role").value;
+  const password = document.getElementById("password").value;
   const error = document.getElementById("loginError");
 
   if (!isValidId(id)) {
     error.textContent = "Enter your college ID: 4 to 20 letters, digits or hyphens (for example DEMO-CS-001).";
     return;
   }
+  const account = DEMO_USERS.find(u => u.id === id);
+  if (!account || account.password !== password) {
+    error.textContent = "Wrong college ID or password.";
+    return;
+  }
   error.textContent = "";
 
   currentUser = id;      // the college ID is the identity: attendance, announcements and chat all use it
-  currentRole = role;
+  currentRole = account.role;      // CR / ACR features come from the account, not a choice at login
+  const role = currentRole;
   setSession({ id, role });
   attendance = loadStore("attendance", {}, currentUser);
+
+  const canPostNow = canPost();
+  document.querySelector(".announce-input").classList.toggle("hidden", !canPostNow);
+  document.getElementById("announceNote").classList.toggle("hidden", canPostNow);
 
   document.getElementById("loginBox").style.display = "none";
   document.getElementById("dashboard").classList.remove("hidden");
@@ -85,6 +111,7 @@ function renderCalendar() {
   subjectPresent = {};
   subjectAbsent = {};
   subjectScheduled = {};
+  notStartedSemester = null;      // set when this month shows a semester that has not begun
 
   for (let day = 1; day <= daysInMonth; day++) {
     const box = document.createElement("div");
@@ -94,8 +121,12 @@ function renderCalendar() {
     const dateOfBox = new Date(year, month, day);
     const weekday = dateOfBox.toLocaleString("default", { weekday: "long" });
 
-    if (timetable[weekday]) {
-      timetable[weekday].forEach(lec => {
+    const sem = semesterOn(dateOfBox);      // no semester on this date: no lectures
+    const notStarted = !!sem && parseDay(sem.start) > now;     // a future semester: shown grey, no attendance
+    if (notStarted) notStartedSemester = sem;
+    const dayLectures = sem ? (sem === activeSemester ? timetable : sem.timetable)[weekday] : null;
+    if (dayLectures) {
+      dayLectures.forEach(lec => {
         if (lec.subject === "Break") return; // Skip breaks
 
         const key = `${year}-${month}-${day}-${lec.subject}-${lec.time}`;
@@ -108,9 +139,9 @@ function renderCalendar() {
 
         const isOver = now > lectureEndTime;
 
-        // Statistics Logic
-        subjectScheduled[lec.subject] = (subjectScheduled[lec.subject] || 0) + 1;
-        if (isOver) {
+        // Statistics Logic (a semester that has not started has no stats)
+        if (!notStarted) subjectScheduled[lec.subject] = (subjectScheduled[lec.subject] || 0) + 1;
+        if (isOver && !notStarted) {
           subjectCount[lec.subject] = (subjectCount[lec.subject] || 0) + 1;
           if (status === "present") {
             subjectPresent[lec.subject] = (subjectPresent[lec.subject] || 0) + 1;
@@ -123,9 +154,10 @@ function renderCalendar() {
         // Create UI element
         const l = document.createElement("div");
         l.className = "lecture";
-        l.style.background = isOver ? "#ccc" : (lec.color || "#4ea8de"); // Grey if over
-        l.style.color = isOver ? "#666" : "white";
+        l.style.background = isOver || notStarted ? "#ccc" : (lec.color || "#4ea8de"); // Grey if over or not started
+        l.style.color = isOver || notStarted ? "#666" : "white";
         l.style.cursor = isOver ? "pointer" : "not-allowed";
+        if (notStarted) l.classList.add("upcoming");
 
         if (status === "present") l.classList.add("present");
         if (status === "absent") l.classList.add("absent");
@@ -133,12 +165,22 @@ function renderCalendar() {
         l.innerText = `${lec.time} ${lec.subject}`;
         
         // Only allow marking if lecture is over (the menu says so when it is not)
-        l.onclick = () => openAttendanceMenu(key, l, isOver, endTimeStr);
+        l.onclick = () => openAttendanceMenu(key, l, isOver, endTimeStr, notStarted ? sem : null);
 
         box.appendChild(l);
       });
     }
+    if (!sem) box.classList.add("no-semester");
+    if (notStarted) box.classList.add("upcoming-semester");
     grid.appendChild(box);
+  }
+
+  const hint = document.querySelector(".calendar-hint");
+  if (hint) {
+    const here = semesterOn(new Date(year, month, 15)) || semesterOn(new Date(year, month, 1)) || semesterOn(new Date(year, month + 1, 0));
+    hint.textContent = "Click a subject to mark attendance. " + (here
+      ? `${here.name}: ${here.start} to ${here.end}.`
+      : "No semester this month, so no lectures.");
   }
 
   renderStats(statsDiv);
@@ -169,7 +211,9 @@ function h(tag, cls, text) {
 // Side panel: per subject  attended / held (percent), lectures this month, absent, unmarked
 function renderStats(statsDiv) {
   const rows = monthRows();
-  if (!rows.length) statsDiv.append(h("p", "stat-empty", "No lectures in the timetable this month."));
+  if (!rows.length && notStartedSemester) statsDiv.append(h("p", "stat-empty not-applicable",
+    `Not applicable yet: ${notStartedSemester.name} starts on ${notStartedSemester.start}. Attendance and stats begin then.`));
+  else if (!rows.length) statsDiv.append(h("p", "stat-empty", "No lectures in the timetable this month."));
   rows.forEach(r => {
     const low = r.percent !== null && r.percent < 75;
     const row = h("div", "stat-row" + (low ? " low" : ""));
@@ -199,6 +243,11 @@ function renderAttendanceTab() {
     table.append(tr);
   });
   list.append(h("p", "attend-month", document.getElementById("monthYear").innerText));
+  if (!rows.length && notStartedSemester) {
+    list.append(h("p", "not-applicable", `Not applicable yet: ${notStartedSemester.name} starts on ${notStartedSemester.start}.`));
+    document.getElementById("presentCount").textContent = "";
+    return;
+  }
   list.append(table);
   const held = rows.reduce((n, r) => n + r.held, 0), present = rows.reduce((n, r) => n + r.present, 0);
   document.getElementById("presentCount").textContent = held
@@ -209,7 +258,11 @@ function renderAttendanceTab() {
 /* STUDY MATERIAL: moved to study.js (the old uploadMaterial/renderMaterials here used undefined variables and a missing element) */
 
 /* ANNOUNCEMENTS */
+// Only a CR or ACR may post; students can only read.
+function canPost() { return currentRole === "cr" || currentRole === "acr"; }
+
 function postAnnouncement() {
+  if (!canPost()) return;
   const text = msg.value.trim();
   if (!text) return;                       // ignore empty announcements
   announcements = loadStore("announcements", announcements);   // keep posts made from other tabs / Vision
@@ -251,13 +304,15 @@ function closeAttendanceMenu() {
 function attendanceMenuKey(e) { if (e.key === "Escape") closeAttendanceMenu(); }
 
 // The little menu under a clicked lecture: Present / Absent / Clear (instead of the old prompt() popup)
-function openAttendanceMenu(key, anchor, isOver, endTimeStr) {
+function openAttendanceMenu(key, anchor, isOver, endTimeStr, notStartedSem) {
   closeAttendanceMenu();
   const menu = h("div", "attend-menu");
   menu.id = "attendMenu";
   menu.setAttribute("role", "dialog");
   menu.setAttribute("aria-label", "Mark attendance");
-  if (!isOver) {
+  if (notStartedSem) {
+    menu.append(h("p", "", `${notStartedSem.name} starts on ${notStartedSem.start}. Attendance is not applicable yet.`));
+  } else if (!isOver) {
     const [eh, em] = parseEndTime(endTimeStr);   // "08" -> 8:00, "01" -> 13:00
     menu.append(h("p", "", `This lecture hasn't finished yet. Attendance opens after ${eh}:${String(em).padStart(2, "0")}.`));
   } else {
@@ -287,7 +342,7 @@ function checkWarnings() {
     .map(r => `${r.sub} below 75% (${r.percent}%)`);
 
   const tabWarning = document.getElementById("warning");
-  if (tabWarning) tabWarning.textContent = warnings.length ? "⚠ Attendance warning: " + warnings.join(", ") : "All subjects are at or above 75% this month.";
+  if (tabWarning) tabWarning.textContent = !monthRows().length && notStartedSemester ? "Not applicable yet." : warnings.length ? "⚠ Attendance warning: " + warnings.join(", ") : "All subjects are at or above 75% this month.";
 
   const statsDiv = document.getElementById("stats");
   if (warnings.length && statsDiv) {

@@ -1,5 +1,7 @@
 # Pre-recording checklist and known issues
 
+> **Note:** this document describes an earlier version of the app (no password, a separate Import tab, one semester) and has not been updated. The README is current.
+
 ## A. Before you record (in order)
 
 **1. Start the server**
