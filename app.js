@@ -191,5 +191,9 @@ function changeMonth(dir) {
   renderCalendar();
 }
 
+// index.html calls these two names; they just forward to changeMonth
+function prevMonth() { changeMonth(-1); }
+function nextMonth() { changeMonth(1); }
+
 
 
