@@ -14,6 +14,9 @@ A picture is just a grid of numbers. OpenCV loads it as a numpy array: `img[y][x
 | `tests/unit.py`, `tests/e2e.py` | Scripted checks: extraction rules, and the real pages in a headless browser. |
 | `../store.js` | Shared localStorage keys used by the attendance app and Vision (see "the bridge"). |
 | `../chat.js`, `../chat.css` | The Chat tab of the attendance app (see "The Chat tab"). |
+| `../study.js`, `../study.css` | The Study Panel tab (see "Study Panel"). |
+| `../import.js`, `../import.css` | The "Import from screenshot" tab (see "Import from screenshot"). |
+| `tests/demo_walkthrough.py` | Runs the proposed integrated demo flow end to end and times it. |
 
 ## The pipeline, step by step
 1. **Load** (`load_pages`, `decode_image`). Images are opened with Pillow and `ImageOps.exif_transpose` turns them upright using their EXIF orientation tag (phones store photos sideways plus a tag; without this a portrait photo would arrive rotated). Images that are physically rotated or upside-down with **no** tag are not corrected and will fail. For PDFs, PyMuPDF renders each page (up to 3) to an image first, so a PDF becomes "just an image"; the PDF's own text layer is not used.
@@ -52,8 +55,8 @@ How to write a truth file: see `real_samples/README.md`. `make_sample.py` also w
 The attendance app (`../index.html`, `app.js`, `data.js`) is plain front-end code with no server and, originally, no saving. Vision is a Python server. They meet in **localStorage**:
 - `main.py` also serves the attendance app at `http://localhost:8000/campus/` (only a fixed list of files, so `.git` and the Python source are not served). Vision lives at `http://localhost:8000/`.
 - Same address and port = same "origin" = the browser gives both pages the same localStorage.
-- `../store.js` defines the keys (announcements, timetable, attendance, plus a timetable backup for Undo) and two helpers, `loadStore(name, fallback)` and `saveStore(name, value)`. The keys hold the shapes the app already used: `announcements` `[{msg, by}]`, `timetable` `{Monday: [{time, subject, color}]}`, `attendance` `{"2026-1-12-Hindi-07-08": "present"}`.
-- `app.js` loads those at startup and saves after posting an announcement or marking attendance. Before this, a page reload erased everything.
+- `../store.js` defines the keys (announcements, timetable, attendance, study, chat, plus a timetable backup for Undo), the login helpers, and `loadStore(name, fallback, suffix?)` / `saveStore(name, value, suffix?)`. The keys hold the shapes the app already used: `announcements` `[{msg, by, ...}]`, `timetable` `{Monday: [{time, subject, color}]}`, `attendance` `{"2026-1-12-Hindi-07-08": "present"}`; attendance is one map per college ID (`campussync.attendance.<ID>`).
+- `app.js` loads those (attendance after login) and saves after posting an announcement or marking attendance. Before this, a page reload erased everything.
 - **You must open the app through `/campus/`.** Opening `index.html` from a file or Live Server is a different origin and will not see Vision's data.
 
 ## Post as announcement
@@ -61,7 +64,7 @@ For notices/notes (not timetables) the page shows a review card under the Study 
 1. Each row is editable (subject, date, topic, task). Edits change the announcement only, not the Study Panel copy.
 2. Entries under 80% confidence get an amber **check this** flag and the Post button refuses until **I checked this** is ticked. "Post all" skips unchecked ones and says how many.
    *Where confidence comes from:* see "Confidence" below (OCR score, times subject-match similarity, times 0.9 if no course+semester was chosen).
-3. Posting appends `{msg, by: "Vision", title, date, source, key}` to the announcements key. `msg` is still the text the old page displays (`title · date · original sentence`); `title`, `date`, `source` and `key` are optional extras the old page ignores.
+3. Posting appends `{msg, by: <logged-in college ID>, role, via: "Vision", title, date, source, key}` to the announcements key (`by` is "Vision" only if nobody is logged in). `msg` is still the text the app displays (`title · date · original sentence`); `title`, `date`, `source` and `key` are optional extras. The app draws announcement text with `textContent`, so text read from a screenshot cannot inject HTML.
 4. **Duplicates:** `key` = subject + date + topic (lower-case, single spaces). If that key is already in the list, it is not posted again. If you edit the topic, it counts as a different announcement.
 5. The Announcements tab re-reads the saved list every time it opens, so new posts appear without a reload.
 
@@ -73,7 +76,7 @@ For notices/notes (not timetables) the page shows a review card under the Study 
 | `parseEndTime()` | `data.js` times are `"07-08"`, the code expected `"09:00"`, so no lecture ever counted as finished and attendance could not be marked. Hours below 7 are treated as afternoon (`"01"` = 1 pm). |
 | `by: currentRole` | Announcements showed "— undefined". |
 | Re-render announcements when the tab opens | The list was blank until you posted. |
-**Not fixed:** `checkWarnings()` reads a variable that only exists inside `renderCalendar()`, so after you mark attendance the browser console shows `subjectCount is not defined` and the "below 75%" alert never appears. Marking itself still works.
+Later changes to the attendance app are described in "Attendance", "Login with a college ID" and "Study Panel" below. `checkWarnings()` (which read counters that were local to `renderCalendar()`) is fixed there.
 
 ## The course catalog (`data/catalog.json`, `catalog.py`)
 Real colleges have many courses; each course has its own number of semesters; each semester has its own subjects; each subject can have a teacher and a room. All of that lives in **one JSON file**, so no college is written into the code:
@@ -115,7 +118,7 @@ RapidOCR has an "is this line upside down?" check. It turned the header `08-09` 
 Entries are paired by their **slot** (timetable: day, plus time if the truth has it; notice: date). A pair with the right slot but wrong subject is reported as "subject expected X got Y" instead of one miss plus one extra. The report gives accuracy separately for **subject, day/time, teacher and room**. Teacher and room are only scored when the truth entry has them, and the report also says how many correct values were read from the image versus filled from the catalog. Truth files may name a `course` and `semester`; eval then runs the pipeline with that scope.
 
 ## New synthetic test layouts (`make_sample.py`)
-All of these are drawn by the script (**synthetic**): `timetable_transposed.png` (days down the side), `timetable_teacher_room.png` (cells with subject + initials + room, fake placeholder course, some cells deliberately missing teacher/room to exercise catalog filling), `notice_teacher_room.png`, two EXIF-rotated JPEGs (`timetable_exif6.jpg`, `timetable_exif3.jpg`), and `timetable_pdf.pdf` (the timetable on an A4 page).
+All of these are drawn by the script (**synthetic**): `timetable_transposed.png` (days down the side), `timetable_teacher_room.png` (cells with subject + initials + room, fake placeholder course, some cells deliberately missing teacher/room to exercise catalog filling), `notice_teacher_room.png`, `timetable_demo_new.png` (a different weekly timetable with the same subjects, used in the integrated demo so the import visibly changes the calendar), two EXIF-rotated JPEGs (`timetable_exif6.jpg`, `timetable_exif3.jpg`), and `timetable_pdf.pdf` (the timetable on an A4 page).
 
 ## Timetable -> attendance
 After a timetable upload the page shows card 4. How it works:
@@ -128,30 +131,59 @@ After a timetable upload the page shows card 4. How it works:
 
 ## Tests (what backs the claims in the README)
 - `py tests/unit.py` (no server needed): 44 checks of the extraction rules: which room/teacher/date patterns are recognised, which are *not*, what the fuzzy match accepts and rejects, the confidence formula, and the eval helpers.
-- `py tests/e2e.py` (server running): 103 checks that drive the real pages in headless Chromium: the demo flow, announcements (editing, confidence flag, duplicates), catalog dropdowns and chips, the attendance app fixes, timetable → attendance (preview, warning, confirm, undo), and the Chat tab (messages, one-to-one, note requests, two-tab sync, quality bar at 1920x1080 and 1366x768, Vision prefill). It also checks that the page makes no requests outside `localhost`. It uses the synthetic images; run `make_sample.py` first.
-- Run both after **any** code change. Neither tests real student images, handwriting, or browsers other than Chromium.
+- `py tests/e2e.py` (server running): 169 checks that drive the real pages in headless Chromium: the Vision demo flow, announcements (editing, confidence flag, duplicates), catalog dropdowns and chips, login by college ID, the Import tab (live updates into the calendar, announcements and Study Panel), the Study Panel (tags, filters, 1 MB limit, storage-full message), attendance (green/red/neutral, monthly counts, 75% warning, per-ID storage), timetable → attendance (preview, warning, confirm, undo), the Chat tab (templates only, one-to-one, answers across tabs, quality bar at 1920x1080 and 1366x768) and Vision's "Request notes" prefill. It also checks that the page makes no requests outside `localhost`. It uses the synthetic images; run `make_sample.py` first.
+- `py tests/demo_walkthrough.py` (server running): 9 checks that run the proposed integrated demo flow in order and print how long each step took.
+- Run all of them after **any** code change. None tests real student images, handwriting, a phone, or browsers other than Chromium.
+
+## Login with a college ID (`../store.js`, `login()` in `../app.js`)
+- The login box asks for a **college ID** (4-20 letters, digits or hyphens, case-insensitive) and a role. There is no name, phone number or email field anywhere (a browser test checks this).
+- `normalizeId()` upper-cases it; a bad ID shows an inline message (no popup). `setSession({id, role})` remembers who is logged in: in `sessionStorage` (per tab, so two tabs can be two people) and in `localStorage` (the last login, so the Vision page knows whose data to use).
+- The ID is the identity everywhere: attendance is stored per ID (`campussync.attendance.<ID>`), announcements are authored by the ID, and chat senders are IDs.
+- `DEMO_USERS` in `store.js` lists four demo accounts, `DEMO-CS-001` to `DEMO-CS-004`, with first-name labels. **These are placeholders, not real people.** Any other well-formed ID can also log in; it just has no demo name.
+- **There is no password in the committed code, so this is not authentication.** Anyone can type any ID. Logout (`logout()`) clears the tab's session and reloads.
+
+## Attendance (`renderCalendar`, `renderStats`, `renderAttendanceTab`, `checkWarnings` in `../app.js`)
+- Calendar by month: the days list each lecture by subject. The month shown starts as the current month.
+- Click a lecture for a small menu: **Present** (green), **Absent** (red), **Clear** (grey, "unmarked"). A lecture whose end time has not passed cannot be marked; the menu says when it opens. The stored shape is unchanged: `attendance["2026-8-7-Hindi-07-08"] = "present" | "absent"` (month is 0-11).
+- `monthRows()` computes, per subject for the month on screen: scheduled lectures, **held** (end time passed), present, absent, unmarked, and percent = present / held. The side panel and the Attendance tab table both use it.
+- `checkWarnings()` flags subjects under 75% in a visible banner and in the Attendance tab (no popup). It was broken before: it read counters that were local to `renderCalendar()`; they are global now. Exactly 75% is not flagged.
+
+## Study Panel (`../study.js`, `../study.css`)
+- Built into the existing Study Panel tab (`#study`), using its existing list container `#materialsList`. Data lives under the `study` key of `store.js`:
+  `{id, source: "upload" | "vision", semester, subject, topic, date, addedBy, addedAt, fileName?, fileType?, fileSize?, fileData?, via?, kind?, teacher?, room?, confidence?, needsCheck?}`.
+- **Upload form:** Semester, Subject (the subjects in the timetable the app is using), Topic (max 80 characters), Date, and an optional file. A file is stored as a data URL **only if it is 1 MB or smaller**; a larger file is refused with a message and nothing is added. If the browser's storage is full, the add is undone and the user is told. Files are offered back through a download link (only `data:` links the panel created itself).
+- **Filters:** semester, subject, topic text (contains), and a date range (from / to), with "Showing X of Y" and "Clear filters". The list is newest date first.
+- **Vision entries:** the Vision page writes every entry it extracts into this key (`saveToStudyPanel`) with `source: "vision"`, the file name, who was logged in, and `needsCheck` when confidence is below 0.80. They show a "Vision · file" chip and an amber "check this (NN% sure)". Entries are de-duplicated by course + semester + subject + date + topic.
+- You can remove items you added (or that Vision added while you were logged in); not other people's.
+- Text is always added with `textContent`.
+
+## Import from screenshot (`../import.js`, `../import.css`)
+- A nav entry opens a tab that shows the Vision page in an `<iframe>` (`../?embedded=1`), loaded the first time the tab is opened. In that mode Vision hides its own header.
+- The frame grows to fit its content: the Vision page reports its height with `postMessage` and `import.js` sizes the frame, so the whole app page scrolls.
+- The standalone Vision page has a "← Back to CampusSync" link.
+- **How results reach the app without a reload:** Vision saves into the same `localStorage` keys (timetable, announcements, study). When one document in the same browser changes localStorage, the browser sends a `storage` event to the other documents, including the parent page of an iframe. `app.js` listens: a new timetable is applied with `applySavedTimetable()` (the `data.js` timetable is remembered so Undo can restore it) and the calendar is redrawn; announcements are re-read; `study.js` re-reads its list.
+- Timetable → attendance still goes through the existing preview-and-confirm card; notices still go through the review card.
 
 ## The Chat tab (`../chat.js`, `../chat.css`)
-**What it is, honestly:** a front-end demo chat inside the attendance app. The "users" are four **demo users** (Zainab, Aarav, Meera, Kabir) picked from a "Chatting as" box, all in **one browser**. There is no server and no accounts, so it is **not** real-time multi-user chat. Two tabs of the same browser stay in sync, which is what makes the demo work.
+**What it is, honestly:** a front-end demo chat inside the attendance app. The "users" are the demo accounts, in **one browser**. There is no server, so it is **not** real-time chat between different computers or browsers. Two tabs of the same browser stay in sync.
 
-**How it hooks in without editing your files:** `index.html` has one added line, `<script src="chat.js"></script>`. `chat.js` then builds its own nav button, its own tab section and its own stylesheet link, and wraps `showTab()` and `login()` from `app.js`. `app.js`, `style.css` and `data.js` are untouched.
+**No free text.** There is no text box. A message can only be sent from one of three templates, each with exactly Subject, Date and Topic:
 
-**Data** (`store.js` key `chat`, stored under `campussync.chat`):
-```
-{ messages: [ {id, convo, from, ts, type: "text", text}
-            | {id, convo, from, ts, type: "request", request: {subject, date, topic, status: "open"|"shared", sharedBy?, sharedAt?}} ],
-  reads: { "<user>": { "<convo>": <time of the newest message that user has seen> } } }
-```
-- `convo` is `"class"` for the group, or `"dm:A|B"` (names sorted) for one-to-one chats, so both users compute the same id.
-- Unread = messages from other people newer than `reads[me][convo]`. Opening a conversation updates `reads` (only when something new was read, so two tabs cannot loop).
-- Every change re-reads the newest saved data, changes it, and saves (`update()`), so a message from another tab is not overwritten.
-- "Who am I" is kept per tab in `sessionStorage`, which is how two tabs can be two different users.
-- Two tabs sync through the browser's `storage` event; the open conversation is redrawn and the composer text is left alone.
+| Template | Card | Answer button | After the answer |
+|---|---|---|---|
+| 📝 Request notes | Note request, status *Open* | "I have these notes" | *Shared*, by whom and when |
+| 📤 Notes shared | Notes shared, status *Shared* | none | |
+| ❓ Ask a doubt | Doubt, status *Open* | "I can help" | *Answered*, by whom and when |
 
-**Safety:** message text, names, subjects and topics are added to the page with `textContent` only (the `el()` helper), never `innerHTML`, so typed HTML shows as text. A request is accepted for display only if subject/date/topic/status are plain strings. Input is trimmed, empty messages are ignored, messages are limited to 1000 characters and topics to 80. There are no `alert()`/`confirm()` popups: errors are inline and "Reset chat" needs two clicks.
+The answer button is shown to everyone except the sender, and only while the card is open. Subject comes from the timetable the app is using; Date defaults to today; Topic is trimmed, spaces collapsed, max 80 characters. Errors show inline in the form (a `<dialog>`, so Esc closes it and focus returns to the button that opened it).
 
-**Note request:** the form is a `<dialog>` with exactly three inputs: Subject (the subjects in the timetable the app is using, from `data.js` or the one Vision saved), Date (defaults to today) and Topic. Sending posts a request card into the open conversation. Anyone except the requester sees "I have these notes"; pressing it sets the status to Shared with their name and the time, and the requester's tab updates through the storage event. Nothing else can be typed into a request.
+**Who is chatting:** the logged-in college ID. A section labelled "Demo only" lets one browser act as another demo account (stored per tab in `sessionStorage`) so one person can show a conversation in two tabs.
 
-**Prefill from Vision:** the Vision page's lecture rows have a "Request notes" link (invisible until hover or keyboard focus, and positioned so it does not change the layout). It opens `/campus/?chat=request&subject=..&date=..&topic=..`. The app shows its normal login first; after login `chat.js` opens the Chat tab with the form filled in (date = the most recent occurrence of that weekday). The user reviews it and presses Send; nothing is sent automatically. If the subject is not in the app's timetable, the Subject box is left empty for the user to choose.
+**How it hooks in without editing your files:** `index.html` has one `<script>` line per feature. `chat.js` builds its own nav button, tab section and stylesheet link, and wraps `showTab()` and `login()` from `app.js`.
 
-**Seed data and reset:** on first load there are a few example messages, one open note request and one direct conversation, so the tab is not empty. "Reset chat" restores exactly that seed data. Message times are relative to when the data was first created.
+**Data** (`store.js` key `chat`): `{ version: 3, messages: [ {id, convo, from, ts, type: "request"|"shared"|"doubt", card: {subject, date, topic, status, handledBy?, handledAt?}} ], reads: { "<id>": { "<convo>": <time of the newest message seen> } } }`.
+- `convo` is `"class"` or `"dm:A|B"` (IDs sorted) so both people compute the same id. Unread = messages from others newer than `reads[me][convo]`; opening a conversation updates `reads` (only when something new was read, so two tabs cannot loop).
+- `update()` re-reads the newest saved data, changes it and saves, so another tab's message is not overwritten. Version 3 replaces older saved chats (free text, first-name senders) with fresh demo data.
+- A message is drawn only if it is a known template with plain-string fields. All text goes onto the page with `textContent`.
+- Seed data: three cards in the group, two in a one-to-one, one in another pair; **Reset chat** (two clicks, no popup) restores them. Message times are relative to when the data was created.
+- **Prefill from Vision:** the lecture rows on the Vision page have a "Request notes" link (invisible until hover or keyboard focus; positioned so the layout does not change). It opens `/campus/?chat=request&subject=..&date=..&topic=..`. After the normal login the Chat tab opens with the Request-notes form pre-filled (date = the most recent occurrence of that weekday). The user reviews it and presses Send.

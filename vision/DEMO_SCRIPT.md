@@ -1,5 +1,7 @@
 # 60-second demo - screen record only, no face, no audio
 
+> This is the **vision-only** 60-second plan. A 90-second flow through the whole CampusSync app (import, attendance, announcements, Study Panel, chat) is proposed in [DEMO_FLOW_PROPOSAL.md](DEMO_FLOW_PROPOSAL.md); its overlays are not written until you approve it. Note: the standalone Vision page now has a small "← Back to CampusSync" link in its header, which will be visible in a vision-only recording.
+
 The demo uses a **synthetic** timetable image (drawn by `make_sample.py`) and the course seeded from `data.js`. Say so in the Devpost text and in the video ("synthetic sample"); do not present it as real data. Every overlay below states only what the screen shows.
 
 **Before recording**: follow [CHECKLIST.md](CHECKLIST.md) (server, URLs, catalog edits, reset, browser zoom 75-80%) and read its list of things not to demo.

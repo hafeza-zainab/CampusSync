@@ -8,13 +8,15 @@
 - The server loads the OCR model before it accepts connections (about 15 s). **If the page loads, it is ready.**
 
 **2. URLs**
-- Vision: `http://localhost:8000/`
-- Attendance app: `http://localhost:8000/campus/`
+- The CampusSync app (the main thing to demo): `http://localhost:8000/campus/`
+- Vision on its own: `http://localhost:8000/`
+- Demo accounts (placeholder IDs, no password in the committed code): `DEMO-CS-001` to `DEMO-CS-004`.
 - Do **not** open `index.html` from a file or Live Server: it can't see Vision's data (measured).
 
 **3. Run the tests** (with the server running; the e2e run resets the saved entries)
 - `py tests/unit.py` → expect `44/44 checks passed`
-- `py tests/e2e.py` → expect `103/103 checks passed`
+- `py tests/e2e.py` → expect `169/169 checks passed`
+- `py tests/demo_walkthrough.py` → expect `9/9 walkthrough checks passed` (runs the proposed integrated demo in order and prints step timings)
 - If either fails, don't record. Tell me which line failed.
 
 **4. Edit `data/catalog.json`** (reload the page afterwards; no server restart needed)
@@ -26,16 +28,18 @@
 
 **5. Reset state**
 - Vision page: click **Reset panel** (empties `data/entries.json`).
-- Browser storage (announcements, timetable, attendance marks live here): record in a fresh **Incognito/Private window**, or clear site data for `localhost:8000` (DevTools → Application → Storage → Clear site data).
-- Chat: open the Chat tab and click **Reset chat** twice (restores the seeded demo messages; it is stored in the same browser storage, so a fresh Incognito window already starts clean).
-- Re-check the Study Panel is empty and the Course/Semester dropdowns show "— not selected —".
+- Browser storage (announcements, timetable, attendance marks per ID, Study Panel items, chat, last login all live here): record in a fresh **Incognito/Private window**, or clear site data for `localhost:8000` (DevTools → Application → Storage → Clear site data). A fresh window also means the calendar starts on the default `data.js` timetable.
+- Chat: a fresh Incognito window already starts with the seeded demo messages; otherwise open the Chat tab and click **Reset chat** twice.
+- Re-check the Study Panel (app) shows "No study materials yet" and Vision's Study Panel is empty.
+- The built-in "Run demo" image is identical to the default timetable, so importing it changes nothing in the calendar. For the integrated demo use `vision/samples/timetable_demo_new.png` (different slots, same subjects). See DEMO_FLOW_PROPOSAL.md.
 
 **6. Screen setup**
 - Use Chrome or Edge (all tests ran in Chromium; nothing else is tested).
 - Window at 1920×1080 if you can. **Browser zoom 75–80%** (Ctrl and minus), so the upload area and the filled Study Panel are both visible. (At 100% the Study Panel is about 1250 px tall and runs off the screen.) Hide the bookmarks bar; turn on Do Not Disturb.
 
 **7. One dry run, then record**
-- Click **Run demo**; expect about 6–7 s until "6 · Auto-tagged", 11 entries, 9 subject cards.
+- Vision only: click **Run demo**; expect about 6–7 s until "6 · Auto-tagged", 11 entries, 9 subject cards.
+- Integrated flow: follow DEMO_FLOW_PROPOSAL.md once, then reset (step 5).
 - Click **Reset panel** again, then start recording and repeat.
 - The page labels the sample "(synthetic sample)". Keep that visible, and say it in the Devpost text.
 
@@ -45,9 +49,10 @@
 |---|---|
 | Upload a real screenshot or photo you haven't tried first | Real-image accuracy has not been measured. Try each one in a rehearsal; only show ones that work. |
 | Borderless timetables, handwriting, sideways or upside-down photos with no EXIF tag | Unsupported or untested (see README Limitations). A borderless timetable gives one meaningless entry. |
-| Mark attendance and expect the "below 75%" alert | `checkWarnings()` is broken: no alert, and an error in the browser console. Marking itself works. |
-| Open `studypanel.html`, `chatbot.html`, or the attendance app's **Study Panel** tab | The form posts to a route that doesn't exist, the chat is a stub, and the tab shows an empty list. |
-| Call the Vision list "the app's Study Panel" | It is a separate list on the Vision page, not connected to the attendance app's Study Panel. |
+| Open `studypanel.html` | The old standalone form posts to a route that doesn't exist. It is unused; the Study Panel **tab** in the app is the real one. |
+| Call the login "secure" or talk about passwords | There is no password in the committed code: any well-formed ID gets in. It is a demo identity. |
+| Upload a study file over 1 MB and expect it to be kept | Browser storage is small: files above 1 MB are refused with a message. Use a small file. |
+| Promise that data is shared between people | Everything lives in one browser's storage. Another computer or browser sees nothing. |
 | Click **Replace timetable** with a placeholder course selected, on a browser profile you care about | It replaces the timetable the attendance app uses (Undo restores it; marks for lectures not in the new timetable are hidden until you Undo). |
 | Open the app from a file / Live Server | Different origin, so Vision's data won't appear. |
 | Leave old uploads in place | Entries and announcements persist (server file + browser storage) until you reset them (step 5). |

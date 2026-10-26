@@ -1,6 +1,6 @@
 # Claims audit: README.md, HOW_IT_WORKS.md, DEMO_SCRIPT.md
 
-Evidence key: **U** = `tests/unit.py` (44 checks) · **E** = `tests/e2e.py` (103 browser checks) · **V** = `eval_results_samples.md` (`py eval.py --dir samples`, synthetic) · **M** = `tests/measure.py` (printed measurements) · **code** = the cited function.
+Evidence key: **U** = `tests/unit.py` (44 checks) · **E** = `tests/e2e.py` (169 browser checks) · **W** = `tests/demo_walkthrough.py` (9 checks) · **V** = `eval_results_samples.md` (`py eval.py --dir samples`, synthetic) · **M** = `tests/measure.py` (printed measurements) · **code** = the cited function.
 "Synthetic" = images drawn by `make_sample.py`. **Nothing here is evidence about real student images.**
 
 Status: **backed** = evidence exists and matches · **softened** = wording changed to match the evidence · **removed** = no evidence, claim deleted · **flag** = depends on facts only the author can confirm.
@@ -17,16 +17,16 @@ Status: **backed** = evidence exists and matches · **softened** = wording chang
 | 6 | Entry fields incl. teacher/room, confidence score | code `parse_*`, E catalog | backed |
 | 7 | Teacher/room marked image vs catalog; left empty when neither has them ("nothing is guessed") | U (patterns), E catalog (dashed chips, expansion), E "course only / nothing chosen never fills" | backed; "nothing is guessed" → "left empty when neither source has them" (OCR can still misread) |
 | 8 | Course + semester limit the subjects searched | U ("catalog scope"), E | backed |
-| 9 | "Study Panel" the entries are filed into | it is the list on the Vision page (`data/entries.json`), not the attendance app's Study Panel | **corrected** and stated explicitly |
+| 9 | (was) "The Study Panel Vision fills is a list on the Vision page, not connected to the attendance app" | superseded: Vision now also writes every entry into the app's Study Panel (E `test_import`, `test_study`); the Vision page keeps its own list too | updated |
 | 10 | "Implemented and tested" list | E, U | backed; "tested" now defined as the scripted checks, run on synthetic data |
 | 11 | Post as announcement: edit, "check this" < 80%, duplicates blocked | E (edit → 1 posted + 4 blocked; low-confidence refused until ticked; Post all skips unchecked) | backed |
 | 12 | Timetable → attendance: preview, hidden-mark warning, confirm, never edits attendance, Undo | E (7 checks) | backed |
 | 13 | Fixes to the attendance app (time format, month buttons, "by undefined", persistence) | E (marking works, month buttons, role shown, marks survive reload) | backed |
 | 14 | App must be opened via `/campus/` | M §7: the same app from `file://` sees `None` | backed |
 | 15 | (was) Chat template not implemented; `chatbot.html` stub calls missing function | superseded: the Chat tab was built (rows C1-C14 below); the stub was replaced and E checks `handleResponse` is gone | updated |
-| 16 | `studypanel.html` posts to `/upload` which does not exist; not linked | code: `grep studypanel index.html` finds nothing; no `/upload` route in `main.py` | backed |
-| 17 | Dashboard Study Panel tab "calls a render function pointing at a missing element" | code: `renderMaterials()` targets `#materials`, page has `#materialsList`, and nothing calls it on tab open | **corrected** (the old wording said the tab calls it) |
-| 18 | `checkWarnings()` throws `subjectCount is not defined` | observed in every browser run; E whitelists exactly this error | backed |
+| 16 | (was) `studypanel.html` posts to `/upload` which does not exist; not linked | still true of that standalone file (unused). The Study Panel **tab** was rebuilt (`study.js`, E `test_study`) | updated |
+| 17 | (was) The dashboard Study Panel tab shows an empty list | superseded: the tab works (tags, filters, files up to 1 MB, Vision entries; E `test_study`) | updated |
+| 18 | (was) `checkWarnings()` throws `subjectCount is not defined` | superseded: fixed; the 75% warning is a visible banner (E `test_attendance`: banner, 75% exactly not flagged, no page errors) | updated |
 | 19 | SAM / handwriting / LLM not built | code | backed |
 | 20 | Deskew technique (Canny, Hough, median angle, warp) | code `estimate_skew`, `preprocess`; V (2.5° synthetic tilt, 11/11) | backed |
 | 21 | CLAHE improves contrast / helps with uneven light | M §1: identical output with and without CLAHE on 2 synthetic images | **softened**: "applied; no measurable effect on the synthetic samples" |
@@ -100,21 +100,39 @@ Status: **backed** = evidence exists and matches · **softened** = wording chang
 - Anything about your own experience (why you built it) is yours to write; I removed the numbers I had invented.
 - The `main` course name, semester id (`sem4`), teachers and rooms in `data/catalog.json` are placeholders or guesses until you edit them.
 
-## Chat tab (added later; README "Chat tab" bullet, HOW_IT_WORKS "The Chat tab")
+## The integrated app (added later; README "CampusSync as one product", HOW_IT_WORKS sections of the same names)
 
 | # | Claim | Evidence | Status |
 |---|---|---|---|
-| C1 | Class group + one-to-one chats, last-message preview, unread counts | E `test_chat` (conversation list, badge 2 on Meera, cleared on open, privacy: Aarav cannot see Zainab/Meera) | backed |
-| C2 | Enter sends, Shift+Enter new line, empty ignored, newest message in view | E | backed |
-| C3 | Typed HTML cannot break the page (textContent) | E: `<b>`/`<img onerror>` shown as text, no elements created, `window.__pwned` unset. Not a security audit: only HTML in message/topic text was tried | backed (narrowly) |
-| C4 | Note request form has only Subject, Date, Topic | E: the dialog contains exactly select + date + text inputs | backed |
-| C5 | Date defaults to today; topic required and max 80; subjects from the timetable | E | backed |
-| C6 | Request card Open → Shared with name and time, requester sees it live, third user sees Shared, requester has no button | E (3 tabs) | backed |
-| C7 | Two tabs of one browser stay in sync (storage event) | E (message, unread badge, request status) | backed |
-| C8 | **"Real-time multi-user chat"** | none: users are simulated, one browser, no server | **not claimed**; README states "simulated users in one browser, no server sync" |
-| C9 | Messages persist and Reset chat restores seed data (two clicks, no popup) | E | backed |
-| C10 | No alert()/confirm() popups in the chat | E (dialog listener across the whole chat test) | backed |
-| C11 | Readable at 1920x1080 and 1366x768: no horizontal scroll, no chat text under 13px, composer inside the screen, visible focus outline | E (both sizes; Tab from the message box reaches Send with a 3px outline) | backed. Not tested: other sizes, zoom levels, screen readers (labels and roles were added but never tried with one) |
-| C12 | Vision "Request notes" link pre-fills the form, requires normal login first, never sends | E `test_chat_prefill` (11 checks) | backed |
-| C13 | The link does not change the Vision page layout or the recorded demo | E: Study Panel height identical with and without the links (1223 px); link has opacity 0 until hover/focus | backed (appearance on hover only) |
-| C14 | `app.js`, `style.css`, `data.js` not edited; `index.html` has one added line | `git diff vision-integrations chat-tab -- app.js style.css data.js index.html` | backed |
+| A1 | Attendance by month / day / subject; the month starts as the current month | E `test_attendance` | backed |
+| A2 | Attended = green, not attended = red, unmarked = neutral grey | E: computed colours `rgb(46,204,113)`, `rgb(231,76,60)`, `rgb(204,204,204)` | backed |
+| A3 | Side panel: per subject held / attended / absent / unmarked / this month's total / percent | E (Hindi: "3 of 4 held attended: 75%", "N this month", "1 absent") | backed |
+| A4 | 75% warning works, is visible without a popup, and 75% exactly is not flagged | E | backed |
+| A5 | Attendance tab shows the same numbers as a table + overall figure | E | backed |
+| A6 | Stored attendance shape unchanged (`{"YYYY-M-D-Subject-time": "present"|"absent"}`) | E (regex check of every stored key) | backed |
+| A7 | A lecture that is not over cannot be marked | E | backed |
+| B1 | Login with a college ID; invalid IDs rejected inline (empty, too short, spaces, symbols, leading hyphen) | E `test_login` | backed |
+| B2 | No phone number or email field anywhere in the app | E: no input whose type/id/name/placeholder/label matches phone/mobile/tel/email; the only login text field is the ID | backed (for the fields of the app; it cannot prove nothing else collects data) |
+| B3 | The ID is the identity: attendance per ID, announcement author, chat sender | E: another ID sees none of the first ID's marks and gets them back on return; announcement shows `DEMO-CS-001 (CR)`; chat shows `Aarav (DEMO-CS-002)` | backed |
+| B4 | Demo IDs are placeholders, not real people's | by construction (`DEMO-CS-001`...); README states it | backed |
+| B5 | **Login is secure / authenticated** | not claimed: there is no password in the committed code; README says so | **not claimed** |
+| C1 | "Import from screenshot" opens Vision inside the app; a back link exists on the standalone page | E `test_import` | backed |
+| C2 | A timetable goes to the calendar after the existing preview + confirm, live, with Undo | E, W | backed |
+| C3 | Notices go to Announcements (existing review card), authored by the logged-in ID, live | E, W | backed |
+| C4 | All entries go to the Study Panel with source and who added them | E (5 notice + 7 lecture entries), W | backed |
+| C5 | The embedded Vision frame is usable (not the 300x150 default; grows to fit its content) | E (frame 1424x772 at first, then grows, e.g. 2324 px) | backed. This was a real bug found by looking at a screenshot, not by the first tests |
+| D1 | Study Panel: tags Semester / Subject / Topic / Date; filters for each | E `test_study` | backed |
+| D2 | Files up to 1 MB stored as data URLs and downloadable; larger refused with a message | E (exact bytes round-trip; 1 MB + 10 bytes refused) | backed |
+| D3 | Storage-full is reported and nothing half-saved appears | E (simulated by making `setItem` throw `QuotaExceededError`) | backed (simulated, not a real full disk) |
+| D4 | Vision entries are marked with their source and an amber "check this" under 80% | E (7 flagged unscoped timetable entries; confident notice entries not flagged) | backed |
+| D5 | You can remove your own items, not someone else's | E (an item injected for another ID has no Remove button) | backed |
+| E1 | Chat: class group and one-to-one, with unread counts and last-message preview | E `test_chat` | backed |
+| E2 | **No free text:** no text box or textarea in the chat; only three templates, each with exactly Subject, Date, Topic | E | backed |
+| E3 | Request notes → "I have these notes" → Shared (who, when); Ask a doubt → "I can help" → Answered; Notes shared has no flow; the sender has no answer button | E (3 tabs) | backed |
+| E4 | Two tabs of one browser stay in sync (messages, unread badge, answers) | E | backed |
+| E5 | **"Real-time multi-user chat"** | none: simulated users, one browser, no server | **not claimed**; README states "simulated users in one browser, no server sync" |
+| E6 | Typed HTML cannot break the page; text uses textContent | E (HTML in a topic shown literally; no `<b>`/`<img>` created). Not a security audit | backed (narrowly) |
+| E7 | Quality bar at 1920x1080 and 1366x768: no horizontal scroll, no chat text under 13px, buttons on screen, visible focus outline, no popups | E | backed. Not tested: other sizes, zoom, screen readers |
+| E8 | Vision's "Request notes" link pre-fills the form, needs the normal login, never sends, does not change the Vision layout | E `test_chat_prefill` | backed |
+| F1 | The proposed 90-second flow works in order, with the timings shown | W (9 checks, scripted clicks: about 17 s total; the OCR waits are about 5-7 s per upload) | backed for the scripted flow; a person is slower, so the 90 s figure in DEMO_FLOW_PROPOSAL.md is an estimate |
+| F2 | `app.js`, `index.html`, `style.css`, `data.js` edits are small and listed | `git diff 08a603e HEAD -- app.js index.html style.css data.js` (reviewed) | backed |
