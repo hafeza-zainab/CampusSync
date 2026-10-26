@@ -7,6 +7,7 @@
   samples/timetable_teacher_room.png - cells hold subject + teacher initials + room (placeholder course)
   samples/notice_teacher_room.png    - notice lines that mention "Prof. ..." and "Room ..."
   samples/notice*.pdf     - the notice as an image-only PDF and as a text-layer PDF
+  samples/timetable_pdf.pdf - the timetable picture placed on an A4 page (a smaller table on a big page)
   samples/timetable_exif6.jpg / timetable_exif3.jpg - phone-style JPEGs whose PIXELS are rotated
                             (90 / 180 degrees) with an EXIF Orientation tag saying how to turn them upright
 
@@ -227,6 +228,11 @@ def make_pdfs():
     doc.save(os.path.join(OUT, "notice_scanned.pdf"))
 
     doc = pymupdf.open()
+    page = doc.new_page()   # A4: the landscape timetable ends up as a smaller table on a portrait page
+    page.insert_image(page.rect, filename=os.path.join(OUT, "timetable.png"))
+    doc.save(os.path.join(OUT, "timetable_pdf.pdf"))
+
+    doc = pymupdf.open()
     page = doc.new_page()  # A4
     page.insert_text((50, 80), "DEPARTMENT OF COMPUTER SCIENCE - NOTICE", fontsize=16, fontname="hebo")
     for i, line in enumerate(NOTICE_LINES):
@@ -268,7 +274,7 @@ def write_truth_files():
          "teacher": "Prof. Rahul Placeholder", "room": "R-204"},
     ]}
     for stem, truth in [("timetable", tt), ("timetable_skew", tt), ("notice", notice_truth),
-                        ("timetable_exif6", tt), ("timetable_exif3", tt),
+                        ("timetable_exif6", tt), ("timetable_exif3", tt), ("timetable_pdf", tt),
                         ("notice_scanned", notice_truth), ("notice_text", notice_truth),
                         ("timetable_transposed", tt_transposed), ("timetable_teacher_room", detail),
                         ("notice_teacher_room", notice_tr)]:

@@ -173,9 +173,20 @@ def find_grid(img):
         if cw * ch > 0.5 * w * h:  # the page background itself
             continue
         cells.append([x, y, x + cw, y + ch])
+    cells = drop_containers(cells)
     if len(cells) < 4:
         return [], skeleton
     return group_rows(cells), skeleton
+
+
+def drop_containers(cells):
+    """A real table cell never contains other cells. If a line is faint or broken, OpenCV can return one
+    big region that covers many cells; keep only the small ones so the rows and columns stay aligned."""
+    def inside(inner, outer):
+        cx, cy = (inner[0] + inner[2]) / 2, (inner[1] + inner[3]) / 2
+        return outer[0] < cx < outer[2] and outer[1] < cy < outer[3]
+
+    return [c for c in cells if sum(1 for o in cells if o is not c and inside(o, c)) < 2]
 
 
 def group_rows(cells):
@@ -390,27 +401,41 @@ def detect_layout(table):
     return None, None
 
 
+def header_index(box, header):
+    """Which header cell is this cell under? The one it overlaps most horizontally (at least half its width).
+    Using position instead of 'the 3rd cell in the row' keeps columns right even if a cell was missed or split."""
+    best, best_overlap = None, 0
+    for i, h in enumerate(header):
+        overlap = min(box[2], h["box"][2]) - max(box[0], h["box"][0])
+        if overlap > best_overlap:
+            best, best_overlap = i, overlap
+    return best if best_overlap >= 0.5 * (box[2] - box[0]) else None
+
+
 def timetable_cells(table):
     """Yield (day, time_text, cell) for every content cell, whichever way the table is laid out."""
     layout, idx = detect_layout(table)
     if layout == "across":                       # days = columns, time slots = rows
-        day_cols = {c: match_day(cell["text"]) for c, cell in enumerate(table[idx]) if match_day(cell["text"])}
+        header = table[idx]
+        day_of = {i: match_day(c["text"]) for i, c in enumerate(header) if match_day(c["text"])}
         for r, row in enumerate(table):
             if r == idx:
                 continue
             time_txt = next((c["text"].strip() for c in row if TIME_RE.match(c["text"].strip())), "")
-            for c, day in day_cols.items():
-                if c < len(row):
-                    yield day, time_txt, row[c]
+            for cell in row:
+                h = header_index(cell["box"], header)
+                if h in day_of:
+                    yield day_of[h], time_txt, cell
     elif layout == "down":                       # days = rows, time slots = columns
         header = table[idx]
         for r, row in enumerate(table):
-            day = match_day(row[0]["text"])
+            day = match_day(row[0]["text"])      # the leftmost cell of the row holds the day name
             if not day or r == idx:
                 continue
-            for c in range(1, len(row)):
-                head = header[c]["text"].strip() if c < len(header) else ""
-                yield day, head if TIME_RE.match(head) else "", row[c]
+            for cell in row[1:]:
+                h = header_index(cell["box"], header)
+                head = header[h]["text"].strip() if h is not None else ""
+                yield day, head if TIME_RE.match(head) else "", cell
 
 
 def mean_conf(blocks):
