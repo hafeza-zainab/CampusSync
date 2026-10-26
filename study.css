@@ -1,0 +1,36 @@
+/* Study Panel tab. Scoped to #study / .study-* so nothing else changes. Text is never smaller than 13px. */
+
+#study { font-size: 14px; }
+.study-top { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 16px; margin-bottom: 14px; }
+.study-form, .study-right { border: 1px solid #ccc; border-radius: 6px; padding: 10px 12px; background: #fafafa; }
+.study-form h4, .study-right h4 { margin: 0 0 8px; font-size: 15px; }
+.study-field { display: flex; flex-direction: column; gap: 3px; margin-bottom: 8px; min-width: 0; }
+.study-field label { font-weight: bold; font-size: 13px; }
+#study select, #study input[type=text], #study input[type=date], #study input[type=search], #study input[type=file] {
+  font: inherit; font-size: 14px; padding: 5px 7px; border: 1px solid #aaa; border-radius: 4px; background: #fff; min-width: 0; max-width: 100%;
+}
+.study-filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 6px 10px; align-items: end; }
+.study-btn { font-size: 14px; padding: 6px 12px; border: 1px solid #aaa; border-radius: 4px; background: #f3f3f3; cursor: pointer; }
+.study-btn.primary { background: #1a5fd0; border-color: #1a5fd0; color: #fff; }
+.study-btn:hover { filter: brightness(0.95); }
+#study button:focus-visible, #study select:focus-visible, #study input:focus-visible, #study a:focus-visible { outline: 3px solid #1a5fd0; outline-offset: 2px; }
+.study-msg { margin: 8px 0 0; font-size: 13px; font-weight: bold; min-height: 18px; }
+.study-msg.ok { color: #14532d; }
+.study-msg.bad { color: #b00020; }
+.study-count { margin: 8px 0 0; font-size: 13px; color: #444; }
+
+.study-list { display: grid; gap: 8px; }
+.study-empty { color: #555; text-align: center; margin: 24px 0; }
+.study-card { position: relative; border: 1px solid #ccc; border-left: 4px solid #1a5fd0; border-radius: 6px; padding: 8px 12px; background: #fff; }
+.study-card.needs-check { border-left-color: #e0a100; background: #fffaf0; }
+.study-topic { font-weight: bold; font-size: 15px; overflow-wrap: anywhere; padding-right: 80px; }
+.study-tags, .study-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 5px; align-items: center; }
+.study-chip { font-size: 13px; padding: 1px 8px; border-radius: 10px; background: #eceff4; color: #222; }
+.study-chip.vision { background: #dbe8ff; color: #123c8a; }
+.study-chip.upload { background: #e2f3e8; color: #14532d; }
+.study-chip.warn { background: #fff3cd; color: #6b4600; border: 1px solid #e0b84a; font-weight: bold; }
+.study-by { font-size: 13px; color: #444; }
+.study-file { display: inline-block; margin-top: 6px; font-size: 14px; color: #1a5fd0; overflow-wrap: anywhere; }
+.study-remove { position: absolute; top: 8px; right: 10px; font-size: 13px; padding: 2px 10px; border: 1px solid #aaa; border-radius: 4px; background: #f3f3f3; cursor: pointer; }
+
+@media (max-width: 900px) { .study-top { grid-template-columns: 1fr; } }

@@ -206,22 +206,7 @@ function renderAttendanceTab() {
     : "No lectures held yet this month.";
 }
 
-/* STUDY MATERIAL */
-function uploadMaterial() {
-  materials.push({
-    topic: topic.value,
-    by: user.name
-  });
-  renderMaterials();
-}
-
-function renderMaterials() {
-  let div = document.getElementById("materials");
-  div.innerHTML = "";
-  materials.forEach(m => {
-    div.innerHTML += `<p>${m.topic} (by ${m.by})</p>`;
-  });
-}
+/* STUDY MATERIAL: moved to study.js (the old uploadMaterial/renderMaterials here used undefined variables and a missing element) */
 
 /* ANNOUNCEMENTS */
 function postAnnouncement() {

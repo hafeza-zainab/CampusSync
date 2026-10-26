@@ -8,6 +8,7 @@ Run this after ANY code change (and before recording):
 It uses fresh browser profiles, resets the saved Study Panel entries at the start and end, and exits with
 a non-zero code if anything fails. It tests with the SYNTHETIC images in samples/ (run make_sample.py first).
 """
+import base64
 import datetime
 import json
 import os
@@ -288,6 +289,96 @@ def test_import(b):
     ctx.close()
 
 
+def study_add(pg, semester, subject, topic, date, files=None):
+    pg.select_option("#study-semester", semester); pg.select_option("#study-subject", subject)
+    pg.fill("#study-topic", topic); pg.fill("#study-date", date)
+    if files is not None:
+        pg.set_input_files("#study-file", files)
+    pg.click("text=Add to Study Panel")
+
+
+def test_study(b):
+    """Step D: the app's Study Panel works with store.js: tags, filters, files up to 1 MB, Vision entries."""
+    errs, dialogs = [], []
+    ctx = b.new_context(viewport={"width": 1500, "height": 1000})
+    app = new_page(ctx, errs)
+    app.on("dialog", lambda d: (dialogs.append(d.type), d.accept()))
+    app.goto(BASE + "/campus/"); app.fill("#username", ID["Zainab"]); app.click("text=Enter")
+    api("/api/entries", "DELETE")
+    app.click(".tab-nav button >> text=Study Panel")
+    check("study: the tab has Semester, Subject, Topic, Date and File inputs",
+          app.locator("#study-semester").count() == 1 and app.locator("#study-subject").count() == 1 and app.locator("#study-topic").count() == 1
+          and app.locator("#study-date").count() == 1 and app.locator("#study-file").count() == 1)
+    check("study: it starts with a clear empty state and 'Showing 0 of 0'", "No study materials yet" in app.inner_text("#materialsList") and "Showing 0 of 0" in app.inner_text("#study"))
+    check("study: the subject list comes from the timetable", app.eval_on_selector_all("#study-subject option", "e => e.map(x => x.textContent)")[1:3] == ["Hindi", "OOP C++"])
+    app.click("text=Add to Study Panel")
+    check("study: adding with nothing chosen shows an inline message (no popup)", app.inner_text(".study-msg") == "Choose a semester.")
+    study_add(app, "sem4", "Python", "Loops", "2026-10-20")
+    check("study: an entry without a file is added with its tags", app.locator(".study-card").count() == 1 and "Semester 4" in app.inner_text(".study-card") and "Python" in app.inner_text(".study-card") and "Loops" in app.inner_text(".study-card"))
+    payload = b"hello study panel"
+    study_add(app, "sem3", "DAA", "Dynamic programming", "2026-10-25", {"name": "dp-notes.txt", "mimeType": "text/plain", "buffer": payload})
+    link = app.locator(".study-file")
+    href = link.get_attribute("href")
+    check("study: a small file is stored as a data URL and offered for download",
+          href.startswith("data:") and base64.b64decode(href.split(",", 1)[1]) == payload and link.get_attribute("download") == "dp-notes.txt", href[:40])
+    big = {"name": "big.pdf", "mimeType": "application/pdf", "buffer": b"x" * (1024 * 1024 + 10)}
+    study_add(app, "sem3", "DAA", "Too big", "2026-10-26", big)
+    check("study: a file over 1 MB is refused with a clear message and nothing is added",
+          "larger than 1 MB" in app.inner_text(".study-msg") and "big.pdf" in app.inner_text(".study-msg") and app.locator(".study-card").count() == 2)
+    study_add(app, "sem4", "Python", "Functions and recursion", "2026-10-10", [])      # [] clears the refused big file from the file box
+    check("study: the list is newest date first", app.eval_on_selector_all(".study-topic", "e => e.map(x => x.textContent)") == ["Dynamic programming", "Loops", "Functions and recursion"])
+
+    # filters
+    def shown():
+        return app.inner_text(".study-count")
+    app.select_option("#study-q-semester", "sem4")
+    check("filter: by semester", app.locator(".study-card").count() == 2 and "Showing 2 of 3" in shown())
+    app.select_option("#study-q-subject", "Python"); app.fill("#study-q-topic", "recurs")
+    check("filter: semester + subject + topic text combine", app.locator(".study-card").count() == 1 and "Functions" in app.inner_text(".study-card"))
+    app.click("text=Clear filters")
+    app.fill("#study-q-from", "2026-10-15"); app.fill("#study-q-to", "2026-10-22")
+    check("filter: by date range (from / to)", app.locator(".study-card").count() == 1 and "Loops" in app.inner_text(".study-card"))
+    app.fill("#study-q-from", "2027-01-01")
+    check("filter: no match shows a clear message", "No materials match these filters" in app.inner_text("#materialsList"))
+    app.click("text=Clear filters")
+    check("filter: Clear filters shows everything again", app.locator(".study-card").count() == 3 and "Showing 3 of 3" in shown())
+
+    # Vision entries
+    v = new_page(ctx, errs)
+    v.goto(BASE + "/"); v.click("#clear")
+    v.set_input_files("#file", os.path.join(S, "timetable_teacher_room.png")); wait_done(v)          # nothing selected -> low confidence
+    v.set_input_files("#file", os.path.join(S, "notice.png")); wait_done(v)
+    app.click(".tab-nav button >> text=Calendar"); app.click(".tab-nav button >> text=Study Panel")
+    vis = app.locator(".study-card", has=app.locator(".study-chip.vision"))
+    check("vision: entries from screenshots appear in the Study Panel, marked with their source",
+          vis.count() == 12 and "Vision · notice.png" in app.inner_text("#materialsList") and "Vision · timetable_teacher_room.png" in app.inner_text("#materialsList"), f"{vis.count()} vision cards")
+    flagged = app.locator(".study-card.needs-check")
+    check("vision: low-confidence entries get the amber 'check this' flag, confident ones do not",
+          flagged.count() == 7 and "check this" in flagged.first.inner_text() and "check this" not in app.locator(".study-card", has_text="Dynamic Programming").first.inner_text(), f"{flagged.count()} flagged")
+    app.select_option("#study-q-subject", "DAA")
+    check("vision: Vision entries filter by subject like any other", app.locator(".study-card").count() >= 2 and all("DAA" in t for t in app.eval_on_selector_all(".study-card", "e => e.map(x => x.textContent)")))
+    app.click("text=Clear filters")
+    check("vision: the tags are Semester / Subject / Topic / Date (notice example)", "Dynamic Programming" in app.inner_text("#materialsList") and "Sat, Nov 14, 2026" in app.inner_text("#materialsList"))
+
+    # remove + ownership
+    foreign = {"id": "other1", "source": "upload", "semester": "sem1", "subject": "Hindi", "topic": "Someone else's notes", "date": "2026-10-01", "addedBy": "DEMO-CS-002", "addedAt": 1}
+    app.evaluate("(f) => { const k = 'campussync.study'; const a = JSON.parse(localStorage.getItem(k)); a.push(f); localStorage.setItem(k, JSON.stringify(a)); }", foreign)
+    app.reload(); app.fill("#username", ID["Zainab"]); app.click("text=Enter"); app.click(".tab-nav button >> text=Study Panel")
+    check("study: items survive a reload", app.locator(".study-card").count() == 16, f"{app.locator('.study-card').count()} cards")
+    other = app.locator(".study-card", has_text="Someone else's notes")
+    check("study: you can remove your own items but not someone else's", other.locator(".study-remove").count() == 0 and app.locator(".study-card", has_text="Loops").locator(".study-remove").count() == 1)
+    app.locator(".study-card", has_text="Loops").locator(".study-remove").click()
+    check("study: Remove deletes the item", app.locator(".study-card", has_text="Loops").count() == 0 and app.locator(".study-card").count() == 15)
+
+    # storage full
+    app.evaluate("() => { Storage.prototype.setItem = function () { throw new DOMException('full', 'QuotaExceededError'); }; }")
+    study_add(app, "sem4", "Python", "Will not fit", "2026-10-21", [])
+    check("study: if browser storage is full the user is told and nothing half-saved appears", "storage is full" in app.inner_text(".study-msg") and app.locator(".study-card", has_text="Will not fit").count() == 0)
+    check("study: no alert()/prompt() popups and no page errors", not dialogs and not errs, str(dialogs + errs))
+    api("/api/entries", "DELETE")
+    ctx.close()
+
+
 def test_attendance(b):
     """Step A: attendance by month / day / subject, green / red / neutral, monthly stats, 75% warning."""
     errs, dialogs = [], []
@@ -541,7 +632,7 @@ def main():
     api("/api/entries", "DELETE")
     with sync_playwright() as p:
         b = p.chromium.launch()
-        for test in (test_api, test_demo_flow, test_announcements, test_catalog, test_login, test_import, test_attendance, test_attendance_bridge, test_chat, test_chat_prefill):
+        for test in (test_api, test_demo_flow, test_announcements, test_catalog, test_login, test_import, test_study, test_attendance, test_attendance_bridge, test_chat, test_chat_prefill):
             print(f"\n== {test.__name__}")
             try:
                 test(b)
