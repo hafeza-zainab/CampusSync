@@ -1,4 +1,3 @@
-alert("JS is connected");
 let user = {};
 let attendance = {};
 let currentDate = new Date(2026, 1); // Feb 2026
