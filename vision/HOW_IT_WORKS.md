@@ -111,3 +111,12 @@ Entries are paired by their **slot** (timetable: day, plus time if the truth has
 
 ## New synthetic test layouts (`make_sample.py`)
 All of these are drawn by the script (**synthetic**): `timetable_transposed.png` (days down the side), `timetable_teacher_room.png` (cells with subject + initials + room, fake placeholder course, some cells deliberately missing teacher/room to exercise catalog filling) and `notice_teacher_room.png`.
+
+## Timetable -> attendance
+After a timetable upload the page shows card 4. How it works:
+1. `currentTimetable()` reads what the attendance app uses now: the saved `campussync.timetable` key, or else the default `timetable` from `/campus/data.js` (run inside a function so its variables do not leak into the page).
+2. `buildTimetable()` turns the lecture entries into the same shape (`{Monday: [{time, subject, color?}]}`), keeping the colour the app already uses for a subject. Entries without a day or time are skipped and listed.
+3. `diffTimetables()` shows what is added, removed and unchanged. The calendar and the Monthly Stats panel already compute lectures from the timetable, so there is no separate lecture list to fill; the preview shows lectures per week per subject.
+4. `hiddenMarks()` reads the attendance key (read only) and finds marks whose weekday, subject and time are not in the new timetable. They stay saved but the calendar stops showing them; the card warns and lists them.
+5. Nothing is written until **Replace timetable** is pressed. Then the old timetable is copied to a backup key and the new one saved. The attendance key is never written. **Undo** restores the backup.
+6. If any lecture is under 80% sure, the button stays disabled until "I checked them" is ticked. If the new timetable equals the current one the button says so and stays disabled.

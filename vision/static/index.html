@@ -47,7 +47,7 @@
   #empty { color:var(--dim); text-align:center; padding:30px 0; }
   #err { color:var(--pink); margin-top:10px; }
   /* review & post card */
-  #review { margin:0 24px 32px; display:none; }
+  #review, #attend { margin:0 24px 32px; display:none; }
   .hint { color:var(--dim); margin:0 0 12px; }
   .rrow { display:grid; grid-template-columns: 1fr 140px 1.4fr 1fr auto; gap:8px; align-items:center; padding:10px 0; border-top:1px solid var(--line); }
   .rrow input[type=text], .rrow input[type=date] { width:100%; background:#12162a; color:var(--txt); border:1px solid var(--line); border-radius:6px; padding:6px 8px; font:inherit; }
@@ -55,6 +55,11 @@
   .rmeta { grid-column:1 / -1; display:flex; gap:12px; align-items:center; font-size:13px; color:var(--dim); }
   .chip.warn { background:#ffc85733; color:var(--amber); }
   .ok { color:var(--green); } .bad { color:var(--pink); }
+  .diff { margin:6px 0; display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+  .chip.add { background:#2ee6a622; color:var(--green); }
+  .chip.del { background:#ff6b9d22; color:var(--pink); text-decoration:line-through; }
+  .box { border:1px solid var(--line); border-radius:10px; padding:10px 12px; margin:10px 0; }
+  .box.warnbox { border-color:var(--amber); background:#ffc85710; }
   @media (max-width:900px){ .rrow { grid-template-columns:1fr; } }
   /* where a teacher / room came from: solid green = read from the image, dashed amber = filled from the catalog */
   .chip.src-image { background:#2ee6a61f; color:var(--green); }
@@ -105,6 +110,19 @@
   <div class="row"><button class="primary" id="postAll">Post all</button><span id="postMsg"></span></div>
 </section>
 
+<!-- Only shown for timetables -->
+<section class="card" id="attend">
+  <h2>4 · Add this timetable to the attendance app</h2>
+  <p class="hint">This <b>replaces</b> the lecture timetable the attendance app uses. Nothing changes until you press the button.
+    Attendance you already marked is never edited or deleted.</p>
+  <div id="attendPreview"></div>
+  <div class="row">
+    <button class="primary" id="attendConfirm" disabled>Replace timetable</button>
+    <button id="attendUndo" style="display:none">Undo</button>
+    <span id="attendMsg"></span>
+  </div>
+</section>
+
 <script>
 const $ = id => document.getElementById(id);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -139,7 +157,7 @@ async function run(file, demo) {
   if (busy) return; busy = true; $('err').textContent = '';
   try {
     caption('1 · Upload', file.name + (demo ? ' (synthetic sample)' : ''));
-    $('steps').innerHTML = ''; $('legend').style.display = 'none'; $('review').style.display = 'none';
+    $('steps').innerHTML = ''; $('legend').style.display = 'none'; $('review').style.display = 'none'; $('attend').style.display = 'none';
     if (file.type === 'application/pdf') { $('stage').style.display = 'none'; }
     else { $('pic').src = URL.createObjectURL(file); $('stage').style.display = 'block'; clearCanvas(); }
     await sleep(demo ? 1500 : 300);
@@ -184,6 +202,7 @@ async function run(file, demo) {
     const all = await (await fetch('/api/entries')).json();
     renderPanel(all, new Set(r.entries.filter(e => e.is_new).map(entryKey)));
     showReview(r.entries.filter(e => e.kind !== 'lecture'), file.name);   // timetables have nothing to announce
+    showAttendance(r.entries.filter(e => e.kind === 'lecture'));        // notices have no weekly lectures
   } catch (e) {
     $('err').textContent = 'Error: ' + e.message; caption('Something went wrong');
   } finally { busy = false; }
@@ -358,6 +377,145 @@ $('postAll').onclick = () => {
   $('postMsg').innerHTML = ` ${count.posted} posted` +
     (count.duplicate ? `, ${count.duplicate} already posted` : '') +
     (count['needs-check'] ? `, <span class="bad">${count['needs-check']} need checking</span>` : '');
+};
+
+// ---- Add a timetable to the attendance app -------------------------------
+// Same keys as ../store.js. We only ever WRITE the timetable key (and a backup of the old one).
+// The attendance key is only READ, so marks you made are never edited or deleted.
+const TT_KEY = 'campussync.timetable';
+const TT_BACKUP_KEY = 'campussync.timetable.backup';
+const ATT_KEY = 'campussync.attendance';
+let ttEntries = [];   // lecture entries from the last timetable upload
+
+function readJSON(key, fallback) {
+  try { const raw = localStorage.getItem(key); return raw === null ? fallback : JSON.parse(raw); } catch (e) { return fallback; }
+}
+
+// The timetable the attendance app is using right now: the saved one, else the default in ../data.js
+async function currentTimetable() {
+  const saved = readJSON(TT_KEY, null);
+  if (saved) return { timetable: saved, from: 'the saved timetable' };
+  try {
+    const text = await (await fetch('/campus/data.js')).text();
+    // run data.js inside a function so its variables do not leak into this page
+    return { timetable: new Function(text + '\nreturn timetable;')(), from: 'the default timetable in data.js' };
+  } catch (e) { return { timetable: {}, from: 'nothing (could not read data.js)' }; }
+}
+
+// keep the colour the attendance app already uses for a subject; else the catalog colour; else none
+function colorFor(subject, cur) {
+  for (const day of Object.keys(cur)) for (const l of cur[day]) if (l.subject === subject && l.color) return l.color;
+  for (const c of catalog.courses) for (const sem of c.semesters) for (const sub of sem.subjects) if (sub.name === subject && sub.color) return sub.color;
+  return undefined;
+}
+
+// entries -> { Monday: [{time, subject, color?}] }  (the shape data.js and the attendance app already use)
+function buildTimetable(entries, cur) {
+  const next = {}, skipped = [], seen = new Set();
+  entries.forEach(e => {
+    if (!e.day || !e.time) { skipped.push(e); return; }      // cannot place a lecture without a day and a time
+    const key = [e.day, e.time, e.subject].join('|');
+    if (seen.has(key)) return;
+    seen.add(key);
+    const lec = { time: e.time, subject: e.subject };
+    const color = colorFor(e.subject, cur);
+    if (color) lec.color = color;
+    (next[e.day] ||= []).push(lec);
+  });
+  Object.values(next).forEach(list => list.sort((a, b) => a.time.localeCompare(b.time)));
+  return { next, skipped };
+}
+
+const flatten = tt => Object.entries(tt).flatMap(([day, list]) => list.filter(l => l.subject !== 'Break').map(l => ({ day, ...l })));
+const lecKey = l => [l.day, l.time, l.subject].join('|');
+
+function diffTimetables(cur, next) {
+  const a = flatten(cur), b = flatten(next);
+  const ak = new Set(a.map(lecKey)), bk = new Set(b.map(lecKey));
+  return { added: b.filter(l => !ak.has(lecKey(l))), removed: a.filter(l => !bk.has(lecKey(l))),
+           kept: b.filter(l => ak.has(lecKey(l))) };
+}
+
+// Marks you made whose lecture is NOT in the new timetable. They stay saved but the calendar will not show them.
+// Attendance keys look like "2026-1-12-Hindi-07-08" = year-month(0-11)-day-subject-time.
+function hiddenMarks(attendance, next) {
+  const have = new Set(flatten(next).map(lecKey));
+  const hidden = [];
+  for (const [k, status] of Object.entries(attendance)) {
+    const p = k.split('-');
+    if (p.length < 6) continue;
+    const [y, m, d] = p.slice(0, 3).map(Number);
+    const time = p.slice(-2).join('-'), subject = p.slice(3, -2).join('-');
+    const day = new Date(y, m, d).toLocaleString('en-US', { weekday: 'long' });
+    if (!have.has([day, time, subject].join('|'))) hidden.push({ date: `${d}/${m + 1}/${y}`, subject, time, status });
+  }
+  return hidden;
+}
+
+const lecChip = (l, cls) => `<span class="chip ${cls}">${esc(l.day.slice(0, 3))} ${esc(l.time)} ${esc(l.subject)}</span>`;
+
+async function showAttendance(entries) {
+  ttEntries = entries;
+  $('attendMsg').textContent = '';
+  $('attendUndo').style.display = 'none';
+  if (!entries.length) { $('attend').style.display = 'none'; return; }
+  const { timetable: cur, from } = await currentTimetable();
+  const { next, skipped } = buildTimetable(entries, cur);
+  const d = diffTimetables(cur, next);
+  const hidden = hiddenMarks(readJSON(ATT_KEY, {}), next);
+  const marks = Object.keys(readJSON(ATT_KEY, {})).length;
+  const low = entries.filter(e => e.confidence < LOW_CONFIDENCE && e.day && e.time);
+  const perWeek = {};
+  flatten(next).forEach(l => perWeek[l.subject] = (perWeek[l.subject] || 0) + 1);
+
+  $('attendPreview').innerHTML = `
+    <div class="box">The attendance app is currently using <b>${esc(from)}</b> (${flatten(cur).length} lectures a week).
+      This would replace it with <b>${flatten(next).length}</b> lectures a week.</div>
+    <div class="box"><b>Will be added (${d.added.length})</b>
+      <div class="diff">${d.added.map(l => lecChip(l, 'add')).join('') || '<span class="chip">none</span>'}</div>
+      <b>Will be removed (${d.removed.length})</b>
+      <div class="diff">${d.removed.map(l => lecChip(l, 'del')).join('') || '<span class="chip">none</span>'}</div>
+      <b>Unchanged:</b> ${d.kept.length}</div>
+    <div class="box"><b>Lectures per week, per subject</b> (the calendar and the Monthly Stats panel count these):
+      <div class="diff">${Object.entries(perWeek).map(([s, n]) => `<span class="chip">${esc(s)}: ${n}</span>`).join('')}</div></div>
+    <div class="box ${hidden.length ? 'warnbox' : ''}"><b>Attendance already marked: ${marks}.</b> None of it is edited or deleted.
+      ${hidden.length ? `<br><span class="bad">${hidden.length} of these marks belong to lectures that are not in the new timetable. They stay saved but the calendar will stop showing them (Undo brings them back):</span>
+        <div class="diff">${hidden.slice(0, 8).map(h => `<span class="chip">${esc(h.date)} ${esc(h.subject)} ${esc(h.time)}: ${esc(h.status)}</span>`).join('')}${hidden.length > 8 ? `<span class="chip">+${hidden.length - 8} more</span>` : ''}</div>`
+        : '<br><span class="ok">All of them still match a lecture in the new timetable.</span>'}</div>
+    ${skipped.length ? `<div class="box warnbox">${skipped.length} entries were skipped because no day or time was read: ${skipped.map(e => esc(e.subject)).join(', ')}</div>` : ''}
+    ${low.length ? `<div class="box warnbox"><span class="chip warn">check this</span> ${low.length} lectures are below ${Math.round(LOW_CONFIDENCE * 100)}% sure
+      (${low.map(e => esc(e.subject)).join(', ')}).
+      <label><input type="checkbox" id="attendOk"> I checked them</label></div>` : ''}`;
+  $('attend').style.display = 'block';
+  const ok = $('attendOk');
+  const nothingToDo = !d.added.length && !d.removed.length;   // identical to what the app already has
+  const update = () => { $('attendConfirm').disabled = !Object.keys(next).length || nothingToDo || (ok && !ok.checked); };
+  if (ok) ok.onchange = update;
+  update();
+  $('attendConfirm').textContent = nothingToDo ? 'Already the same: nothing to replace'
+    : `Replace timetable (adds ${d.added.length}, removes ${d.removed.length})`;
+}
+
+$('attendConfirm').onclick = async () => {
+  // re-read the current timetable now, in case it changed since the preview
+  const { timetable: cur } = await currentTimetable();
+  const { next } = buildTimetable(ttEntries, cur);
+  if (!Object.keys(next).length) return;
+  localStorage.setItem(TT_BACKUP_KEY, JSON.stringify({ had: localStorage.getItem(TT_KEY) !== null, value: cur }));  // for Undo
+  localStorage.setItem(TT_KEY, JSON.stringify(next));
+  $('attendConfirm').disabled = true;
+  $('attendUndo').style.display = '';
+  $('attendMsg').innerHTML = ' <span class="ok">Timetable replaced ✓</span> <a href="/campus/" target="_blank" style="color:var(--blue)">open the attendance app</a>';
+};
+
+$('attendUndo').onclick = async () => {
+  const backup = readJSON(TT_BACKUP_KEY, null);
+  if (!backup) return;
+  if (backup.had) localStorage.setItem(TT_KEY, JSON.stringify(backup.value));
+  else localStorage.removeItem(TT_KEY);                       // before this, the app used the default in data.js
+  localStorage.removeItem(TT_BACKUP_KEY);
+  await showAttendance(ttEntries);     // redraw the preview against the restored timetable (this also clears the message)
+  $('attendMsg').innerHTML = ' <span class="ok">Old timetable restored ✓</span>';
 };
 
 fetch('/api/entries').then(r => r.json()).then(e => renderPanel(e)).catch(() => {});

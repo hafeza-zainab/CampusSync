@@ -11,7 +11,8 @@
 const STORE_KEYS = {
   announcements: "campussync.announcements",
   timetable: "campussync.timetable",
-  attendance: "campussync.attendance"
+  attendance: "campussync.attendance",
+  timetableBackup: "campussync.timetable.backup"   // written by Vision so "Undo" can restore the old timetable
 };
 
 // Read a saved value. If nothing is saved (or localStorage is blocked) return the fallback.

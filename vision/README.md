@@ -1,6 +1,6 @@
 # CampusSync Vision — OpenCV AI Competition
 
-> Drop in a timetable screenshot, a PDF notice or a page of notes. CampusSync reads it, finds every lecture and deadline, and files it into your Study Panel by **Semester → Subject → Topic → Date**. No typing.
+> Drop in a timetable screenshot, a PDF notice or a page of notes. CampusSync reads it, finds every lecture and deadline, and files it into your Study Panel by **Course → Semester → Subject → Topic → Date**, with teacher and room when they are written on the page. No typing.
 
 ## Inspiration
 Every semester students re-type the same timetable into a calendar, an attendance app and a study folder. Notices arrive as screenshots and PDFs in chat groups, so deadlines get buried. CampusSync already has a Study Panel (tagged resource sharing) and Attendance Management; Vision is the missing input layer.
@@ -8,7 +8,26 @@ Every semester students re-type the same timetable into a calendar, an attendanc
 ## What it does
 1. **Upload** an image or PDF (timetable, notice, notes).
 2. **See the vision**: detected table cells (blue) and OCR text blocks (green) are drawn live over the image, with per-stage timings.
-3. **Auto-tagging**: each lecture or deadline becomes `{semester, subject, topic, date, task}` and appears in the Study Panel with a confidence score.
+3. **Auto-tagging**: each lecture or deadline becomes `{course, semester, subject, topic, date, task, teacher, room}` and appears in the Study Panel with a confidence score. Teacher and room are marked **read from image** (solid) or **filled from catalog** (dashed); nothing is guessed.
+4. **Course catalog**: pick a course and semester and only that semester's subjects are searched (`data/catalog.json`: courses → semesters → subjects → teacher/room).
+
+## CampusSync as a whole, and where Vision fits
+CampusSync is a college platform: attendance tracking, announcements, a Study Panel for tagged resources, and (planned) structured class chat. Vision is the module that removes manual data entry: it reads a screenshot or PDF and feeds the other parts.
+
+**Implemented and tested** (browser-tested with headless Chromium on synthetic images and a scripted attendance app; not yet tried on real student screenshots):
+- Vision pipeline: upload, deskew, table detection, OCR, extraction, auto-tagging, per-field accuracy tool (`eval.py`).
+- **Post as announcement**: notice entries can be edited, flagged "check this" under 80% confidence, and posted into the existing Announcements tab. Duplicates (same subject + date + topic) are blocked.
+- **Timetable → attendance**: a parsed timetable can replace the lecture timetable in the attendance app after a preview (added / removed lectures, lectures per week per subject, a warning for marks that would be hidden) and a confirm click. Marked attendance is never edited. Undo restores the old timetable.
+- Attendance app fixes needed for the above: lecture times like `07-08` could not be parsed (attendance could not be marked), month buttons called missing functions, announcements showed "by undefined", and nothing was saved between page loads (announcements, timetable and attendance now persist in localStorage).
+- The attendance app must be opened through the Vision server (`http://localhost:8000/campus/`); that is how the two share data.
+
+**In progress / future work (not built, or not working):**
+- **Structured class chat / note-request template**: planned, not implemented. `chatbot.html` is a stub whose buttons call a function that does not exist, so "Request notes" prefill was dropped.
+- **Study Panel upload form** (`studypanel.html`): a form that posts to `/upload`, which does not exist. It is not linked from the app. The dashboard's Study Panel tab also calls a render function that points at a missing element.
+- `checkWarnings()` (the "below 75%" alert) throws `subjectCount is not defined` after marking attendance; marking still works.
+- Handwriting, SAM-style segmentation for borderless tables, and an LLM extraction pass are not built.
+- No real-image accuracy is measured yet (see Results).
+- `data/catalog.json` is seeded from `data.js`, which holds subject names only. Real teachers, rooms and the semester number must be added by hand; the demo courses A and B in the catalog are fake placeholders.
 
 ## How we built it (computer-vision pipeline)
 | Stage | Technique |
