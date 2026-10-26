@@ -3,6 +3,8 @@
   samples/timetable.png   - a clean timetable "screenshot" (the demo image)
   samples/timetable_skew.png - same timetable, but tilted + noisy like a phone photo
   samples/notice.png      - a plain-text notice with dates and deadlines
+  samples/timetable_demo_new.png     - a DIFFERENT weekly timetable (same subjects as data.js, other days/slots),
+                            used in the integrated demo so that importing it visibly changes the calendar
   samples/timetable_transposed.png   - days down the left, time slots across the top
   samples/timetable_teacher_room.png - cells hold subject + teacher initials + room (placeholder course)
   samples/notice_teacher_room.png    - notice lines that mention "Prof. ..." and "Room ..."
@@ -115,6 +117,22 @@ def draw_grid(row_labels, col_labels, cell_lines, corner="Time", cw=190, ch=80, 
     return img
 
 
+# A different (synthetic) weekly timetable with the same subjects as data.js: importing it changes the calendar.
+DEMO_NEW_SLOTS = ["07-08", "08-09", "09-10", "10-11"]
+DEMO_NEW = {
+    ("Monday", "07-08"): "Python", ("Monday", "08-09"): "DAA",
+    ("Tuesday", "07-08"): "OOP C++", ("Tuesday", "09-10"): "Web Tech",
+    ("Wednesday", "08-09"): "Hindi", ("Wednesday", "10-11"): "EVS",
+    ("Thursday", "07-08"): "Leadership", ("Thursday", "09-10"): "Advanced Python",
+    ("Friday", "08-09"): "Extension Work", ("Friday", "10-11"): "OOP C++",
+}
+
+
+def timetable_demo_new():
+    return draw_grid(DEMO_NEW_SLOTS, DAYS, lambda r, c: [DEMO_NEW[(DAYS[c], DEMO_NEW_SLOTS[r])]] if (DAYS[c], DEMO_NEW_SLOTS[r]) in DEMO_NEW else None,
+                     cw=190, ch=80, lw=110, fsize=22)
+
+
 def timetable_transposed():
     """Same lectures as timetable(), but days are the ROWS and time slots are the COLUMNS."""
     return draw_grid(DAYS, SLOTS, lambda r, c: [GRID[(DAYS[r], SLOTS[c])][0]] if (DAYS[r], SLOTS[c]) in GRID else None,
@@ -179,6 +197,7 @@ def main():
 
     cv2.imwrite(os.path.join(OUT, "notice.png"), to_cv(notice()))
 
+    cv2.imwrite(os.path.join(OUT, "timetable_demo_new.png"), to_cv(timetable_demo_new()))
     cv2.imwrite(os.path.join(OUT, "timetable_transposed.png"), to_cv(timetable_transposed()))
     cv2.imwrite(os.path.join(OUT, "timetable_teacher_room.png"), to_cv(timetable_teacher_room()))
     cv2.imwrite(os.path.join(OUT, "notice_teacher_room.png"), to_cv(notice_teacher_room()))
@@ -273,7 +292,8 @@ def write_truth_files():
         {"subject": "Placeholder Physics", "date": "2026-11-21", "topic": "Optics", "task": "Exam / test",
          "teacher": "Prof. Rahul Placeholder", "room": "R-204"},
     ]}
-    for stem, truth in [("timetable", tt), ("timetable_skew", tt), ("notice", notice_truth),
+    demo_new = {"mode": "timetable", "entries": [{"subject": subj, "day": day, "time": slot} for (day, slot), subj in DEMO_NEW.items()]}
+    for stem, truth in [("timetable", tt), ("timetable_skew", tt), ("notice", notice_truth), ("timetable_demo_new", demo_new),
                         ("timetable_exif6", tt), ("timetable_exif3", tt), ("timetable_pdf", tt),
                         ("notice_scanned", notice_truth), ("notice_text", notice_truth),
                         ("timetable_transposed", tt_transposed), ("timetable_teacher_room", detail),
