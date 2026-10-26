@@ -1,0 +1,54 @@
+{
+  "mode": "timetable",
+  "course": "demo-a",
+  "semester": "sem1",
+  "entries": [
+    {
+      "subject": "Placeholder Algebra",
+      "day": "Monday",
+      "time": "07-08",
+      "teacher": "Dr. Asha Placeholder",
+      "room": "LH-3"
+    },
+    {
+      "subject": "Placeholder Physics",
+      "day": "Monday",
+      "time": "08-09",
+      "teacher": "Prof. Rahul Placeholder",
+      "room": "R-204"
+    },
+    {
+      "subject": "Placeholder Drawing",
+      "day": "Tuesday",
+      "time": "07-08",
+      "teacher": "Ms. Neha Placeholder",
+      "room": "Room 301"
+    },
+    {
+      "subject": "Placeholder Seminar",
+      "day": "Tuesday",
+      "time": "09-10"
+    },
+    {
+      "subject": "Placeholder Algebra",
+      "day": "Wednesday",
+      "time": "07-08",
+      "teacher": "Dr. Asha Placeholder",
+      "room": "LH-3"
+    },
+    {
+      "subject": "Placeholder Physics",
+      "day": "Thursday",
+      "time": "08-09",
+      "teacher": "Prof. Rahul Placeholder",
+      "room": "R-204"
+    },
+    {
+      "subject": "Placeholder Drawing",
+      "day": "Friday",
+      "time": "07-08",
+      "teacher": "Ms. Neha Placeholder",
+      "room": "Room 301"
+    }
+  ]
+}

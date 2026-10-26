@@ -1,0 +1,23 @@
+{
+  "mode": "notice",
+  "course": "demo-a",
+  "semester": "sem1",
+  "entries": [
+    {
+      "subject": "Placeholder Algebra",
+      "date": "2026-11-14",
+      "topic": "Matrices",
+      "task": "Submit assignment",
+      "teacher": "Prof. Asha Placeholder",
+      "room": "Room 301"
+    },
+    {
+      "subject": "Placeholder Physics",
+      "date": "2026-11-21",
+      "topic": "Optics",
+      "task": "Exam / test",
+      "teacher": "Prof. Rahul Placeholder",
+      "room": "R-204"
+    }
+  ]
+}

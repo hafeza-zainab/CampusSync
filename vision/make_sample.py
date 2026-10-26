@@ -3,6 +3,13 @@
   samples/timetable.png   - a clean timetable "screenshot" (the demo image)
   samples/timetable_skew.png - same timetable, but tilted + noisy like a phone photo
   samples/notice.png      - a plain-text notice with dates and deadlines
+  samples/timetable_transposed.png   - days down the left, time slots across the top
+  samples/timetable_teacher_room.png - cells hold subject + teacher initials + room (placeholder course)
+  samples/notice_teacher_room.png    - notice lines that mention "Prof. ..." and "Room ..."
+  samples/notice*.pdf     - the notice as an image-only PDF and as a text-layer PDF
+
+EVERYTHING here is SYNTHETIC (drawn by this script). It is for testing, not evidence of real-world accuracy.
+The teacher/room samples use the fake PLACEHOLDER course in data/catalog.json.
 """
 import os
 import cv2
@@ -79,6 +86,77 @@ def notice():
     return img
 
 
+def draw_grid(row_labels, col_labels, cell_lines, corner="Time", cw=190, ch=80, lw=110, hh=70, fsize=22):
+    """Draw a ruled table. cell_lines(r, c) returns a list of text lines for that cell (or None)."""
+    W, H = lw + cw * len(col_labels) + 40, hh + ch * len(row_labels) + 40
+    img = Image.new("RGB", (W, H), "white")
+    d = ImageDraw.Draw(img)
+    x0, y0 = 20, 20
+    for c, label in enumerate([corner] + col_labels):
+        x = x0 if c == 0 else x0 + lw + (c - 1) * cw
+        w = lw if c == 0 else cw
+        d.rectangle([x, y0, x + w, y0 + hh], fill="#e8eef7", outline="black", width=3)
+        d.text((x + w / 2, y0 + hh / 2), label, font=font(fsize + 2, True), fill="black", anchor="mm")
+    for r, label in enumerate(row_labels):
+        y = y0 + hh + r * ch
+        d.rectangle([x0, y, x0 + lw, y + ch], fill="#f4f4f4", outline="black", width=3)
+        d.text((x0 + lw / 2, y + ch / 2), label, font=font(fsize), fill="black", anchor="mm")
+        for c in range(len(col_labels)):
+            x = x0 + lw + c * cw
+            lines = cell_lines(r, c)
+            d.rectangle([x, y, x + cw, y + ch], fill="#fff6d6" if lines else "white", outline="black", width=3)
+            for i, text in enumerate(lines or []):
+                step = ch / (len(lines) + 1)
+                d.text((x + cw / 2, y + step * (i + 1)), text, font=font(fsize - (4 if i else 2), i == 0),
+                       fill="black", anchor="mm")
+    return img
+
+
+def timetable_transposed():
+    """Same lectures as timetable(), but days are the ROWS and time slots are the COLUMNS."""
+    return draw_grid(DAYS, SLOTS, lambda r, c: [GRID[(DAYS[r], SLOTS[c])][0]] if (DAYS[r], SLOTS[c]) in GRID else None,
+                     corner="Day", cw=175, ch=70, lw=130, fsize=20)
+
+
+# Placeholder course (fake!) used by the teacher/room samples. Matches data/catalog.json: demo-a / sem1.
+# (day, slot): (subject text, [extra lines written in the cell])
+DETAIL_SLOTS = ["07-08", "08-09", "09-10", "10-11"]
+DETAIL_CELLS = {
+    ("Monday", "07-08"): ("Placeholder Algebra", ["AP", "LH-3"]),         # initials + room in the image
+    ("Monday", "08-09"): ("Placeholder Physics", ["RP", "R-204"]),
+    ("Tuesday", "07-08"): ("Placeholder Drawing", ["NP", "Room 301"]),
+    ("Tuesday", "09-10"): ("Placeholder Seminar", []),                    # nothing in image, nothing in catalog
+    ("Wednesday", "07-08"): ("Placeholder Algebra", []),                  # nothing in image -> catalog fills teacher+room
+    ("Thursday", "08-09"): ("Placeholder Physics", ["Prof. Rahul Placeholder"]),   # full name in image, room from catalog
+    ("Friday", "07-08"): ("Placeholder Drawing", ["NP"]),                 # initials in image, room from catalog
+}
+DETAIL_TEACHER = {"Placeholder Algebra": "Dr. Asha Placeholder", "Placeholder Physics": "Prof. Rahul Placeholder",
+                  "Placeholder Drawing": "Ms. Neha Placeholder"}
+DETAIL_ROOM = {"Placeholder Algebra": "LH-3", "Placeholder Physics": "R-204", "Placeholder Drawing": "Room 301"}
+
+
+def timetable_teacher_room():
+    def cell(r, c):
+        hit = DETAIL_CELLS.get((DAYS[c], DETAIL_SLOTS[r]))
+        return [hit[0]] + hit[1] if hit else None
+    return draw_grid(DETAIL_SLOTS, DAYS, cell, cw=230, ch=100, lw=110, fsize=22)
+
+
+NOTICE_TR_LINES = [
+    "Placeholder Algebra: Submit Assignment 1 on Matrices by 14 Nov 2026, Prof. Asha Placeholder, Room 301",
+    "Placeholder Physics - Unit test on Optics, 21/11/2026 in R-204",
+]
+
+
+def notice_teacher_room():
+    img = Image.new("RGB", (1400, 360), "white")
+    d = ImageDraw.Draw(img)
+    d.text((40, 30), "SAMPLE NOTICE (synthetic)", font=font(28, True), fill="black")
+    for i, t in enumerate(NOTICE_TR_LINES):
+        d.text((40, 120 + i * 90), t, font=font(23), fill="black")
+    return img
+
+
 def to_cv(pil):
     return cv2.cvtColor(np.array(pil), cv2.COLOR_RGB2BGR)
 
@@ -97,6 +175,10 @@ def main():
     cv2.imwrite(os.path.join(OUT, "timetable_skew.png"), sk)
 
     cv2.imwrite(os.path.join(OUT, "notice.png"), to_cv(notice()))
+
+    cv2.imwrite(os.path.join(OUT, "timetable_transposed.png"), to_cv(timetable_transposed()))
+    cv2.imwrite(os.path.join(OUT, "timetable_teacher_room.png"), to_cv(timetable_teacher_room()))
+    cv2.imwrite(os.path.join(OUT, "notice_teacher_room.png"), to_cv(notice_teacher_room()))
 
     make_pdfs()
     write_truth_files()
@@ -145,8 +227,29 @@ def write_truth_files():
         {"subject": "Web Tech", "date": "2026-12-02", "topic": "Portfolio website", "task": "Project / demo"},
         {"subject": "EVS", "date": "2026-11-25", "topic": "Water Pollution", "task": "Exam / test"},
     ]}
+    # same lectures, days-down-the-side layout; also run WITH a course+semester chosen
+    tt_transposed = dict(tt, course="main", semester="sem4")
+
+    # cells with subject + teacher + room. Expected values are the FINAL ones (image-read or catalog-filled)
+    detail = {"mode": "timetable", "course": "demo-a", "semester": "sem1", "entries": [
+        {"subject": subj, "day": day, "time": slot,
+         "teacher": DETAIL_TEACHER.get(subj, ""), "room": DETAIL_ROOM.get(subj, "")}
+        for (day, slot), (subj, _) in DETAIL_CELLS.items()]}
+    for e in detail["entries"]:   # leave out fields that are empty so they are not scored
+        for k in ("teacher", "room"):
+            if not e[k]:
+                del e[k]
+
+    notice_tr = {"mode": "notice", "course": "demo-a", "semester": "sem1", "entries": [
+        {"subject": "Placeholder Algebra", "date": "2026-11-14", "topic": "Matrices", "task": "Submit assignment",
+         "teacher": "Prof. Asha Placeholder", "room": "Room 301"},
+        {"subject": "Placeholder Physics", "date": "2026-11-21", "topic": "Optics", "task": "Exam / test",
+         "teacher": "Prof. Rahul Placeholder", "room": "R-204"},
+    ]}
     for stem, truth in [("timetable", tt), ("timetable_skew", tt), ("notice", notice_truth),
-                        ("notice_scanned", notice_truth), ("notice_text", notice_truth)]:
+                        ("notice_scanned", notice_truth), ("notice_text", notice_truth),
+                        ("timetable_transposed", tt_transposed), ("timetable_teacher_room", detail),
+                        ("notice_teacher_room", notice_tr)]:
         with open(os.path.join(OUT, stem + ".truth.json"), "w", encoding="utf-8") as f:
             json.dump(truth, f, indent=2)
 

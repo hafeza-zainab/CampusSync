@@ -4,7 +4,8 @@ Run:   py -m uvicorn main:app --port 8000      (from inside the vision folder)
 Open:  http://localhost:8000
 
 Endpoints
-  POST   /api/analyze   upload image/PDF -> detections + entries, entries are auto-saved
+  GET    /api/catalog   courses / semesters / subjects (data/catalog.json)
+  POST   /api/analyze   upload image/PDF (+ optional course, semester) -> detections + entries, auto-saved
   GET    /api/entries   everything saved so far (the Study Panel reads this)
   DELETE /api/entries   clear all (handy before re-recording the demo)
 """
@@ -17,6 +18,7 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
+import catalog
 import pipeline
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -40,25 +42,28 @@ def save_entries(entries):
 
 
 @app.post("/api/analyze")
-async def analyze(file: UploadFile = File(...), semester: str = Form("sem4")):
+async def analyze(file: UploadFile = File(...), course: str = Form(""), semester: str = Form("")):
     data = await file.read()
     if len(data) > 15_000_000:
         raise HTTPException(413, "File too large (15 MB max)")
     try:
-        result = pipeline.analyze(data, file.filename or "upload", semester)
+        result = pipeline.analyze(data, file.filename or "upload", semester=semester, course=course)
     except ValueError as e:
         raise HTTPException(400, str(e))
 
     ok, png = cv2.imencode(".png", result.pop("image"))
     result["image"] = "data:image/png;base64," + base64.b64encode(png.tobytes()).decode()
 
-    # auto-tag: save new entries, skip ones we already have (same subject/date/topic)
+    # auto-tag: save new entries, skip ones we already have (same course/semester/subject/date/topic)
+    def entry_key(e):
+        return (e.get("course", ""), e.get("semester", ""), e["subject"], e["date"], e["topic"])
+
     saved = load_entries()
-    seen = {(e["subject"], e["date"], e["topic"]) for e in saved}
+    seen = {entry_key(e) for e in saved}
     added = 0
     for e in result["entries"]:
         e["source"] = file.filename
-        key = (e["subject"], e["date"], e["topic"])
+        key = entry_key(e)
         e["is_new"] = key not in seen
         if e["is_new"]:
             saved.append({k: v for k, v in e.items() if k not in ("source_box", "is_new")})
@@ -67,6 +72,12 @@ async def analyze(file: UploadFile = File(...), semester: str = Form("sem4")):
     save_entries(saved)
     result["added"] = added
     return result
+
+
+@app.get("/api/catalog")
+def get_catalog():
+    """Courses -> semesters -> subjects, for the dropdowns. (Edit data/catalog.json to change it.)"""
+    return catalog.load_catalog()
 
 
 @app.get("/api/entries")

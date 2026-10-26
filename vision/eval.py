@@ -4,24 +4,33 @@
   py eval.py --dir samples      # runs on the synthetic samples -> eval_results_samples.md
 
 For every image (or PDF) NAME.ext that has a NAME.truth.json next to it:
-  1. run pipeline.analyze() on it (timed)
-  2. compare the extracted entries with the entries you wrote in the truth file
-  3. count correct / partial / missed / extra
-
+  1. run pipeline.analyze() on it (timed), using the course/semester named in the truth file
+  2. pair every truth entry with an extracted entry
+  3. score each field separately and count correct / partial / missed / extra
 Images with no truth file are listed as "unlabelled" and skipped.
 See real_samples/README.md for how to write a truth file.
 
-How an entry is judged (nothing is counted correct silently):
-  timetable  key = subject + day (+ time, only if the truth entry has a "time")
-             subject must match exactly (ignoring upper/lower case)
-  notice     key = subject + date, both must match exactly
-             then topic and task text are compared with difflib fuzzy matching:
-             similarity must be >= --topic-min (default 0.80) and >= --task-min (default 0.70).
-             If the key matches but the text is too different it is a PARTIAL: reported, NOT counted correct.
-  correct = key matches and text checks pass
-  partial = key matches but topic/task text is below its threshold
-  missed  = truth entry with no extracted entry for that key
-  extra   = extracted entry that matches no truth entry
+PAIRING (nothing is counted correct silently)
+  A truth entry and an extracted entry are paired by their SLOT:
+     timetable: the day (+ the time, only if the truth entry has a "time")
+     notice:    the date
+  First we look for a pair with the same slot AND the same subject.
+  If none, a pair with the same slot but a different subject is still made, so a wrong subject
+  shows up as "subject wrong" instead of looking like one missed + one extra entry.
+
+FIELDS SCORED (accuracy is reported separately for each)
+  subject    must equal the truth subject (ignoring upper/lower case)
+  day/time   the slot above was found (a missed entry counts as wrong)
+  teacher    only scored when the truth entry has "teacher". Equal after dropping titles (Dr./Prof.)
+             and punctuation; initials ("AP") also count as equal to the full name they abbreviate.
+  room       only scored when the truth entry has "room". "Room 301" == "301" == "R301"-style spelling
+             differences are ignored (case, spaces, hyphens, a leading "Room").
+  topic/task notices only, optional: fuzzy match with difflib, thresholds --topic-min / --task-min
+
+An entry is CORRECT when every field that is scored for it is right.
+  partial = paired, but at least one scored field is wrong (not counted correct)
+  missed  = truth entry with no extracted entry in its slot
+  extra   = extracted entry that is paired with nothing
 """
 import argparse
 import difflib
@@ -36,6 +45,9 @@ import pipeline
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 IMAGE_EXT = (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".pdf")
+FIELDS = ["subject", "slot", "teacher", "room"]
+FIELD_LABEL = {"subject": "subject", "slot": "day/time", "teacher": "teacher", "room": "room"}
+TITLE_WORDS = {"prof", "dr", "mr", "mrs", "ms", "miss", "sir", "madam"}
 
 
 # --------------------------------------------------------------------------
@@ -51,71 +63,127 @@ def norm_time(text):
     return re.sub(r"\s*[:.\-–—]\s*", "-", norm(text))
 
 
+def norm_room(text):
+    """'Room 301' / 'room-301' / '301' -> '301';  'R-204' -> 'r204'"""
+    t = re.sub(r"^(room|rm)\.?\s*", "", norm(text))
+    return re.sub(r"[^a-z0-9]", "", t)
+
+
+def norm_person(text):
+    """'Dr. Anita  Rao' -> 'anita rao'"""
+    return " ".join(w for w in re.findall(r"[a-z]+", norm(text)) if w not in TITLE_WORDS)
+
+
+def teacher_equal(a, b):
+    na, nb = norm_person(a), norm_person(b)
+    if not na or not nb:
+        return False
+    if na == nb:
+        return True
+    initials = lambda n: "".join(w[0] for w in n.split())           # 'anita rao' -> 'ar'
+    return initials(na) == nb.replace(" ", "") or initials(nb) == na.replace(" ", "")
+
+
 def similarity(a, b):
     """0.0 (nothing alike) .. 1.0 (identical) using difflib"""
     return difflib.SequenceMatcher(None, norm(a), norm(b)).ratio()
 
 
-def entry_key(e, mode):
-    """The part of an entry that decides WHICH truth entry it should match."""
+def slot_matches(t, g, mode):
+    """Is extracted entry g in the same slot as truth entry t?"""
     if mode == "timetable":
-        return (norm(e.get("subject")), norm(e.get("day")))
-    return (norm(e.get("subject")), str(e.get("date", "")))
+        if norm(t.get("day")) != norm(g.get("day")):
+            return False
+        return not t.get("time") or norm_time(t["time"]) == norm_time(g.get("time"))
+    return str(t.get("date")) == str(g.get("date"))
+
+
+def slot_label(t):
+    return f"{t.get('day') or t.get('date')}" + (f" {t['time']}" if t.get("time") else "")
 
 
 # --------------------------------------------------------------------------
 # compare extracted entries against truth
 # --------------------------------------------------------------------------
+def pair_entries(truth_entries, got_entries, mode):
+    """Returns pairs[i] = index of the extracted entry paired with truth entry i (or None)."""
+    pairs = [None] * len(truth_entries)
+    used = set()
+
+    def closest(t, cands):
+        if mode == "notice":   # several entries may share a date: take the most similar topic
+            return max(cands, key=lambda i: similarity(t.get("topic", ""), got_entries[i].get("topic", "")))
+        return max(cands, key=lambda i: similarity(t.get("subject", ""), got_entries[i].get("subject", "")))
+
+    for exact in (True, False):          # pass 1: same slot + same subject. pass 2: same slot only
+        for ti, t in enumerate(truth_entries):
+            if pairs[ti] is not None:
+                continue
+            cands = [gi for gi, g in enumerate(got_entries)
+                     if gi not in used and slot_matches(t, g, mode)
+                     and (not exact or norm(g.get("subject")) == norm(t.get("subject")))]
+            if cands:
+                pairs[ti] = closest(t, cands)
+                used.add(pairs[ti])
+    return pairs
+
+
 def compare(truth_entries, got_entries, mode, topic_min, task_min):
-    """Returns dict with counts and a list of human-readable problem lines."""
-    used = set()          # indexes of extracted entries already matched
+    """Score every truth entry. Returns counts, per-field [right, scored], and problem lines."""
+    pairs = pair_entries(truth_entries, got_entries, mode)
+    fields = {f: [0, 0] for f in FIELDS}          # field -> [right, scored]
+    sources = {"teacher": {"image": 0, "catalog": 0}, "room": {"image": 0, "catalog": 0}}
     correct = partial = missed = 0
     problems = []
 
-    for t in truth_entries:
-        want_key = entry_key(t, mode)
-        # candidate extracted entries with the same key that are not used yet
-        cands = [i for i, g in enumerate(got_entries)
-                 if i not in used and entry_key(g, mode) == want_key]
-        if mode == "timetable" and t.get("time"):
-            cands = [i for i in cands if norm_time(got_entries[i].get("time")) == norm_time(t["time"])]
-        label = f"{t.get('subject')} / {t.get('day') or t.get('date')}" + (f" {t['time']}" if t.get("time") else "")
-
-        if not cands:
+    for t, gi in zip(truth_entries, pairs):
+        label = f"{t.get('subject')} / {slot_label(t)}"
+        scored = ["subject", "slot"] + [f for f in ("teacher", "room") if t.get(f)]
+        for f in scored:
+            fields[f][1] += 1
+        if gi is None:
             missed += 1
             problems.append(f"MISSED   {label}")
             continue
 
-        if mode == "timetable":
-            used.add(cands[0])
-            correct += 1
-            continue
-
-        # notice: pick the candidate whose topic is closest, then check the text fields
-        best = max(cands, key=lambda i: similarity(t.get("topic", ""), got_entries[i].get("topic", "")))
-        used.add(best)
-        g = got_entries[best]
+        g = got_entries[gi]
         bad = []
-        if t.get("topic") is not None:
-            s = similarity(t["topic"], g.get("topic"))
-            if s < topic_min:
-                bad.append(f"topic expected '{t['topic']}' got '{g.get('topic')}' (similarity {s:.2f} < {topic_min})")
-        if t.get("task") is not None:
-            s = similarity(t["task"], g.get("task"))
-            if s < task_min:
-                bad.append(f"task expected '{t['task']}' got '{g.get('task')}' (similarity {s:.2f} < {task_min})")
+        fields["slot"][0] += 1
+        if norm(g.get("subject")) == norm(t.get("subject")):
+            fields["subject"][0] += 1
+        else:
+            bad.append(f"subject expected '{t.get('subject')}' got '{g.get('subject')}'")
+        if t.get("teacher"):
+            if teacher_equal(t["teacher"], g.get("teacher")):
+                fields["teacher"][0] += 1
+                sources["teacher"][g.get("teacher_source") or "image"] += 1
+            else:
+                bad.append(f"teacher expected '{t['teacher']}' got '{g.get('teacher') or '-'}'")
+        if t.get("room"):
+            if norm_room(t["room"]) == norm_room(g.get("room")):
+                fields["room"][0] += 1
+                sources["room"][g.get("room_source") or "image"] += 1
+            else:
+                bad.append(f"room expected '{t['room']}' got '{g.get('room') or '-'}'")
+        if mode == "notice":
+            for name, minimum in (("topic", topic_min), ("task", task_min)):
+                if t.get(name) is not None:
+                    s = similarity(t[name], g.get(name))
+                    if s < minimum:
+                        bad.append(f"{name} expected '{t[name]}' got '{g.get(name)}' (similarity {s:.2f} < {minimum})")
         if bad:
             partial += 1
             problems.append(f"PARTIAL  {label}: " + "; ".join(bad))
         else:
             correct += 1
 
-    extra_idx = [i for i in range(len(got_entries)) if i not in used]
+    paired = {gi for gi in pairs if gi is not None}
+    extra_idx = [i for i in range(len(got_entries)) if i not in paired]
     for i in extra_idx:
         g = got_entries[i]
         problems.append(f"EXTRA    {g.get('subject')} / {g.get('day') or g.get('date')} ('{g.get('topic')}')")
-    return {"correct": correct, "partial": partial, "missed": missed,
-            "extra": len(extra_idx), "problems": problems}
+    return {"correct": correct, "partial": partial, "missed": missed, "extra": len(extra_idx),
+            "fields": fields, "sources": sources, "problems": problems}
 
 
 # --------------------------------------------------------------------------
@@ -141,12 +209,13 @@ def evaluate(folder, topic_min, task_min):
         with open(truth_path, encoding="utf-8") as f:
             truth = json.load(f)
         mode = truth.get("mode", "notice")
+        course, semester = truth.get("course", ""), truth.get("semester", "")
         with open(os.path.join(folder, name), "rb") as f:
             data = f.read()
 
         t0 = time.perf_counter()
         try:
-            result = pipeline.analyze(data, name)
+            result = pipeline.analyze(data, name, semester=semester, course=course)
             error = None
         except Exception as e:  # keep going: one bad image must not stop the whole evaluation
             result, error = {"cells": [], "entries": [], "mode": "error"}, str(e)
@@ -154,35 +223,58 @@ def evaluate(folder, topic_min, task_min):
 
         res = compare(truth["entries"], result["entries"], mode, topic_min, task_min)
         res.update(name=name, expected=len(truth["entries"]), extracted=len(result["entries"]),
-                   cells=len(result["cells"]), seconds=seconds, mode=mode,
-                   detected_mode=result["mode"], error=error)
+                   cells=len(result["cells"]), seconds=seconds, mode=mode, detected_mode=result["mode"],
+                   scope=(f"{course or '-'}/{semester or '-'}"), error=error)
         if mode != result["mode"] and not error:
             res["problems"].insert(0, f"NOTE     truth says '{mode}' but the pipeline treated it as '{result['mode']}'")
         rows.append(res)
     return rows, unlabelled
 
 
+def fmt_field(counts):
+    right, scored = counts
+    return f"{right}/{scored}" if scored else "–"
+
+
 def format_report(rows, unlabelled, folder_name, label, topic_min, task_min):
-    lines = []
-    lines.append(f"# Evaluation results ({label} images)")
-    lines.append("")
+    lines = [f"# Evaluation results ({label} images)", ""]
+    if label == "synthetic":
+        lines += ["> **SYNTHETIC**: every image here was drawn by `make_sample.py`. These numbers test the code; "
+                  "they are not evidence of real-world accuracy.", ""]
     lines.append(f"Run: {datetime.now():%Y-%m-%d %H:%M} · folder: `{folder_name}/` · "
                  f"fuzzy thresholds: topic >= {topic_min}, task >= {task_min} (difflib ratio)")
-    lines.append("")
-    lines.append("| image | type | cells | expected | extracted | correct | partial | missed | extra | seconds |")
-    lines.append("|---|---|---|---|---|---|---|---|---|---|")
+    lines += ["", "| image | type | scope (course/semester) | cells | expected | extracted | correct | partial | missed | extra "
+              "| subject | day/time | teacher | room | seconds |",
+              "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for r in rows:
-        lines.append(f"| {r['name']} | {r['detected_mode']} | {r['cells']} | {r['expected']} | {r['extracted']} | "
-                     f"{r['correct']} | {r['partial']} | {r['missed']} | {r['extra']} | {r['seconds']:.1f} |")
+        f = r["fields"]
+        lines.append(f"| {r['name']} | {r['detected_mode']} | {r['scope']} | {r['cells']} | {r['expected']} | {r['extracted']} | "
+                     f"{r['correct']} | {r['partial']} | {r['missed']} | {r['extra']} | "
+                     f"{fmt_field(f['subject'])} | {fmt_field(f['slot'])} | {fmt_field(f['teacher'])} | {fmt_field(f['room'])} | "
+                     f"{r['seconds']:.1f} |")
+
     total_expected = sum(r["expected"] for r in rows)
     total_correct = sum(r["correct"] for r in rows)
     overall = f"{len(rows)} {label} images: {total_correct}/{total_expected} entries correct"
     lines += ["", f"**{overall}**" if rows else "**No labelled images found.**", ""]
+
     if rows:
-        lines.append(f"Extra (unexpected) entries: {sum(r['extra'] for r in rows)} · "
-                     f"partial (key right, text too different, not counted correct): {sum(r['partial'] for r in rows)} · "
-                     f"mean time {sum(r['seconds'] for r in rows) / len(rows):.1f} s/image")
+        lines += ["| field | right | scored | accuracy |", "|---|---|---|---|"]
+        for fld in FIELDS:
+            right = sum(r["fields"][fld][0] for r in rows)
+            scored = sum(r["fields"][fld][1] for r in rows)
+            acc = f"{100 * right / scored:.0f}%" if scored else "not scored (no truth entry has it)"
+            lines.append(f"| {FIELD_LABEL[fld]} | {right} | {scored} | {acc} |")
         lines.append("")
+        for fld in ("teacher", "room"):
+            img = sum(r["sources"][fld]["image"] for r in rows)
+            cat = sum(r["sources"][fld]["catalog"] for r in rows)
+            if img + cat:
+                lines.append(f"Correct {fld} values: {img} read from the image, {cat} filled from the catalog.")
+        lines += ["", f"Extra (unexpected) entries: {sum(r['extra'] for r in rows)} · "
+                  f"partial (paired, a field wrong, not counted correct): {sum(r['partial'] for r in rows)} · "
+                  f"mean time {sum(r['seconds'] for r in rows) / len(rows):.1f} s/image", ""]
+
     problems = [r for r in rows if r["problems"] or r["error"]]
     if problems:
         lines.append("## Details")

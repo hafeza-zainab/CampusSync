@@ -1,0 +1,67 @@
+{
+  "version": 1,
+  "note": "courses -> semesters -> subjects. teacher = {name, code} and room are optional (null = unknown). Courses with placeholder:true are FAKE test data and are never searched when no course is selected.",
+  "courses": [
+    {
+      "id": "main",
+      "name": "My course (rename me)",
+      "placeholder": false,
+      "note": "Seeded from ../data.js. data.js has subject names and colours only: no course name, semester number, teachers or rooms. Semester 'sem4' is a guess; edit ids/names and add teachers/rooms here.",
+      "semesters": [
+        {
+          "id": "sem4",
+          "name": "Semester 4",
+          "start": "2025-12-08",
+          "end": "2026-04-15",
+          "subjects": [
+            {"name": "Hindi", "color": "limegreen", "teacher": null, "room": null},
+            {"name": "OOP C++", "color": "gold", "teacher": null, "room": null},
+            {"name": "Extension Work", "color": "plum", "teacher": null, "room": null},
+            {"name": "Python", "color": "violet", "teacher": null, "room": null},
+            {"name": "Web Tech", "color": "salmon", "teacher": null, "room": null},
+            {"name": "EVS", "color": "springgreen", "teacher": null, "room": null},
+            {"name": "DAA", "color": "turquoise", "teacher": null, "room": null},
+            {"name": "Advanced Python", "color": "orange", "teacher": null, "room": null},
+            {"name": "Leadership", "color": "mediumpurple", "teacher": null, "room": null}
+          ]
+        }
+      ]
+    },
+    {
+      "id": "demo-a",
+      "name": "PLACEHOLDER Demo Course A (2 semesters)",
+      "placeholder": true,
+      "semesters": [
+        {
+          "id": "sem1",
+          "name": "Semester 1",
+          "subjects": [
+            {"name": "Placeholder Algebra", "teacher": {"name": "Dr. Asha Placeholder", "code": "AP"}, "room": "LH-3"},
+            {"name": "Placeholder Physics", "teacher": {"name": "Prof. Rahul Placeholder", "code": "RP"}, "room": "R-204"},
+            {"name": "Placeholder Drawing", "teacher": {"name": "Ms. Neha Placeholder", "code": "NP"}, "room": "Room 301"},
+            {"name": "Placeholder Seminar", "teacher": null, "room": null}
+          ]
+        },
+        {
+          "id": "sem2",
+          "name": "Semester 2",
+          "subjects": [
+            {"name": "Placeholder Calculus", "teacher": {"name": "Dr. Asha Placeholder", "code": "AP"}, "room": "LH-3"},
+            {"name": "Placeholder Chemistry", "teacher": {"name": "Mr. Karan Placeholder", "code": "KP"}, "room": "R-110"}
+          ]
+        }
+      ]
+    },
+    {
+      "id": "demo-b",
+      "name": "PLACEHOLDER Demo Course B (4 semesters)",
+      "placeholder": true,
+      "semesters": [
+        {"id": "sem1", "name": "Semester 1", "subjects": [{"name": "Placeholder Economics", "teacher": {"name": "Dr. Meera Placeholder", "code": "MP"}, "room": "LH-1"}]},
+        {"id": "sem2", "name": "Semester 2", "subjects": [{"name": "Placeholder Statistics", "teacher": null, "room": "LH-2"}]},
+        {"id": "sem3", "name": "Semester 3", "subjects": [{"name": "Placeholder Accounting", "teacher": {"name": "Ms. Tara Placeholder", "code": "TP"}, "room": null}]},
+        {"id": "sem4", "name": "Semester 4", "subjects": [{"name": "Placeholder Law", "teacher": null, "room": null}]}
+      ]
+    }
+  ]
+}

@@ -22,10 +22,10 @@ A picture is just a grid of numbers. OpenCV loads it as a numpy array: `img[y][x
    - `group_rows` sorts the rectangles into rows and columns.
 4. **OCR** (`run_ocr`). RapidOCR (ONNX models, installed with pip only) returns text blocks: box, text, confidence. Tesseract is the fallback.
 5. **Understand**
-   - *Timetable* (`parse_timetable`): the row with the most day names is the header. For every other cell, the OCR text inside it is the subject and the row's first cell is the time. Subjects are fuzzy-matched (`difflib`) against the ones in your `data.js`, so "OOP C+" still becomes "OOP C++". Date = next occurrence of that weekday.
+   - *Timetable* (`parse_timetable`): the row with the most day names is the header. For every other cell, the OCR text inside it is the subject and the row's first cell is the time. Subjects are fuzzy-matched (`difflib`) against the catalog (see "The course catalog" below), so "OOP C+" still becomes "OOP C++". The table can have days across the top *or* down the side (`detect_layout`). Date = next occurrence of that weekday.
    - *Notice* (`parse_notice`): OCR boxes at the same height are joined into lines. Each line with a date (`14 Nov 2026`, `14/11/2026`, `Nov 25`) becomes one entry. Subject comes from your known list or a `Subject:` prefix, task from keywords (submit / viva / quiz ...), topic is the words after "on".
    - *Notes with no dates* (`parse_notes`): first line is the topic, dated today.
-6. **Auto-tag.** `main.py` saves `{semester, subject, topic, date, task}`, skipping duplicates. The page groups them Semester > Subject > date.
+6. **Auto-tag.** `main.py` saves each entry with its course and semester, skipping duplicates (same course + semester + subject + date + topic). The page groups them Course > Semester > Subject, then lists topic and date.
 
 ## Honest limitations
 - Printed text works well. **Handwriting is hit-and-miss**: general OCR models are weak at it, and I have not tested it on real handwriting.
@@ -69,3 +69,45 @@ For notices/notes (not timetables) the page shows a review card under the Study 
 | `by: currentRole` | Announcements showed "— undefined". |
 | Re-render announcements when the tab opens | The list was blank until you posted. |
 **Not fixed:** `checkWarnings()` reads a variable that only exists inside `renderCalendar()`, so after you mark attendance the browser console shows `subjectCount is not defined` and the "below 75%" alert never appears. Marking itself still works.
+
+## The course catalog (`data/catalog.json`, `catalog.py`)
+Real colleges have many courses; each course has its own number of semesters; each semester has its own subjects; each subject can have a teacher and a room. All of that lives in **one JSON file**, so no college is written into the code:
+```
+courses -> semesters -> subjects -> { name, color?, teacher?: {name, code}, room? }
+```
+- `main` is seeded from `data.js`. `data.js` only has subject names and colours (no course name, semester number, teacher or room), so those fields are empty and the semester id `sem4` is a guess. **Edit the file** to put in your real course name, semester ids, teachers (`{"name": "Dr. ...", "code": "AP"}`) and rooms.
+- `demo-a` and `demo-b` are **fake placeholder courses** (`"placeholder": true`) with different numbers of semesters, used only for tests. They are never searched when no course is selected.
+- The upload page has Course and Semester dropdowns (filled from `GET /api/catalog`). Their choice becomes a **Scope** (`catalog.make_scope`):
+
+| You picked | Subjects searched | Confidence | May fill teacher/room from catalog |
+|---|---|---|---|
+| course + semester | only that semester | normal | yes |
+| course only | all semesters of that course | x 0.9 | no |
+| nothing | every subject of every non-placeholder course | x 0.9 | no |
+
+- **Fuzzy matching** (`match_subject`): OCR text must be at least 0.85 similar to a subject name to count as that subject. Below that it is kept as read and treated as unknown. (It was 0.78 at first; a test showed "Placeholder Seminar" being matched to "Placeholder Chemistry". 0.85 still catches real typos such as `OOP C+` = 0.92 and `0OP C++` = 0.86.)
+
+## Teacher and room (`extract_teacher_room`, `resolve_fields`)
+Patterns recognised: `Prof./Dr./Mr./Mrs./Ms. Name`, a teacher short code from the catalog (`AP`, `(AP)`, `Dr. AP`, or a code at the end of a timetable cell), `Room 301`, `R-204`, `LH-3`, `LH 3`.
+Every entry records where each value came from:
+
+| field | meaning |
+|---|---|
+| `teacher_source` / `room_source` = `"image"` | read from the image. Initials are expanded to the full name through the catalog and the raw text is kept in `teacher_read` (shown as `AP → Dr. Asha ...`). |
+| `= "catalog"` | **not** in the image; copied from the catalog. Only when course + semester were chosen **and** the subject matched at least 0.90 (`CATALOG_FILL_MIN`). Shown with a dashed amber outline and "from catalog". |
+| `= ""` | not found, left empty. Nothing is guessed. |
+
+Short codes are only recognised when they exist in the catalog, so a random all-caps word like `CSE` is never turned into a teacher.
+
+## Confidence
+`confidence = OCR score of the text (RapidOCR) x subject match similarity (or 0.85 if no known subject matched) x 0.9 if no course+semester was chosen`, capped at 0.99. The OCR score is real model output; 0.85 and 0.9 are fixed rules of ours. Below **0.80** the entry is shown amber with "check this".
+(The timetable confidence used to be a fixed 0.99/0.7. It is now computed.)
+
+## One OCR fix worth knowing
+RapidOCR has an "is this line upside down?" check. It turned the header `08-09` into `60-80` (99.9% confident) because the digits look alike when rotated 180°. `run_ocr` now calls the engine with `use_cls=False`. Screenshots and deskewed photos are upright, so nothing is lost; a photo taken upside-down would now fail.
+
+## eval.py: per-field accuracy
+Entries are paired by their **slot** (timetable: day, plus time if the truth has it; notice: date). A pair with the right slot but wrong subject is reported as "subject expected X got Y" instead of one miss plus one extra. The report gives accuracy separately for **subject, day/time, teacher and room**. Teacher and room are only scored when the truth entry has them, and the report also says how many correct values were read from the image versus filled from the catalog. Truth files may name a `course` and `semester`; eval then runs the pipeline with that scope.
+
+## New synthetic test layouts (`make_sample.py`)
+All of these are drawn by the script (**synthetic**): `timetable_transposed.png` (days down the side), `timetable_teacher_room.png` (cells with subject + initials + room, fake placeholder course, some cells deliberately missing teacher/room to exercise catalog filling) and `notice_teacher_room.png`.

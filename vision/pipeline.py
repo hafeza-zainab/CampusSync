@@ -22,38 +22,35 @@ from datetime import date, datetime, timedelta
 import cv2
 import numpy as np
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+from catalog import load_catalog, make_scope
 
 DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
 
 
 # --------------------------------------------------------------------------
-# 0. Known subjects - borrowed from your own data.js so tags match your app
+# 0. Subject matching against the catalog (see catalog.py)
 # --------------------------------------------------------------------------
-def load_known_subjects():
-    subjects = {"Break", "Lunch"}  # not real subjects, but recognised so we can skip them
-    try:
-        with open(os.path.join(ROOT, "data.js"), encoding="utf-8") as f:
-            subjects |= set(re.findall(r'subject:\s*"([^"]+)"', f.read()))
-    except OSError:
-        pass
-    return sorted(subjects - {"Break", "Lunch"}), {"break", "lunch", "recess"}
+SKIP_WORDS = {"break", "lunch", "recess"}   # cells with these words are not lectures
+UNKNOWN_SUBJECT_FACTOR = 0.85  # confidence multiplier when the text matched no known subject
+NO_SCOPE_FACTOR = 0.9          # confidence multiplier when no course+semester was chosen
+MATCH_MIN = 0.85               # below this similarity, OCR text is NOT treated as a known subject
+CATALOG_FILL_MIN = 0.90        # a teacher/room is filled from the catalog only if the subject matched this well
+                               # (0.85-0.90 is accepted as a typo fix, but too weak to copy a teacher from)
 
 
-KNOWN_SUBJECTS, SKIP_WORDS = load_known_subjects()
-
-
-def canonical_subject(text):
-    """'oop c+' -> 'OOP C++'. Fuzzy-match OCR text to a subject we know about."""
+def match_subject(text, scope):
+    """Fuzzy-match OCR text to a subject in the scope: 'oop c+' -> 'OOP C++'.
+    Returns (name, subject_dict_or_None, similarity 0-1). No match: keeps the text as read, subject None."""
     t = re.sub(r"\s+", " ", text).strip()
     if not t:
-        return None, False
-    lowered = {s.lower(): s for s in KNOWN_SUBJECTS}
-    hit = difflib.get_close_matches(t.lower(), lowered.keys(), n=1, cutoff=0.78)
+        return "", None, 0.0
+    by_name = {s["name"].lower(): s for s in scope.subjects}
+    hit = difflib.get_close_matches(t.lower(), by_name.keys(), n=1, cutoff=MATCH_MIN)
     if hit:
-        return lowered[hit[0]], True
-    return t, False  # unknown subject: keep what OCR read
+        sim = difflib.SequenceMatcher(None, t.lower(), hit[0]).ratio()
+        return by_name[hit[0]]["name"], by_name[hit[0]], sim
+    return t, None, 0.0
 
 
 # --------------------------------------------------------------------------
@@ -196,7 +193,9 @@ def run_ocr(img):
         from rapidocr import RapidOCR
         if _engine is None:
             _engine = RapidOCR()
-        res = _engine(img)
+        # use_cls=False: skip the "is this text upside down?" check. Screenshots and deskewed photos are
+        # upright, and the check flipped numbers like "08-09" into "60-80" with 99.9% confidence.
+        res = _engine(img, use_cls=False)
         blocks = []
         if res.boxes is None:
             return blocks
@@ -233,6 +232,98 @@ def text_in_cell(cell, blocks):
 
 
 # --------------------------------------------------------------------------
+# 5. Teacher and room extraction
+# --------------------------------------------------------------------------
+# Rules: only fill what is actually written in the image, or what the catalog says for a subject
+# we matched for sure. Never guess. Every teacher/room records where it came from:
+#   "image"   = read from the image (initials like "AP" are expanded through the catalog,
+#               the raw text is kept in teacher_read)
+#   "catalog" = not in the image; filled from the catalog (only when course + semester are chosen)
+#   ""        = not found
+TITLES = {"prof": "Prof.", "dr": "Dr.", "mr": "Mr.", "mrs": "Mrs.", "ms": "Ms.",
+          "miss": "Miss", "sir": "Sir", "madam": "Madam"}
+# capitalised words that can follow a name in a sentence but are not part of the name
+NAME_STOP = {"submit", "assignment", "lab", "quiz", "test", "exam", "project", "demo", "unit",
+             "viva", "room", "on", "by", "due", "class", "lecture", "will", "has"}
+
+# "Prof. Sharma", "Dr. P. K. Rao", "Ms Anita Singh"   ((?i:...) = ignore case for the title only)
+TEACHER_RE = re.compile(r"\b((?i:prof|dr|mr|mrs|ms|miss|sir|madam))\.?\s+((?:[A-Z][A-Za-z]*\.?\s*){1,4})")
+# "Room 301", "Rm. 12"
+ROOM_WORD_RE = re.compile(r"\b(?i:room|rm)\.?\s*[-:#]?\s*([A-Za-z]{0,3}-?\d{1,4}[A-Za-z]?)\b")
+# "R-204", "LH-3", "LT - 2", "CR-5"
+ROOM_CODE_RE = re.compile(r"\b(R|LH|LT|CR|CL|LAB)\s?-\s?(\d{1,4}[A-Za-z]?)\b")
+# "LH 3"
+ROOM_LH_RE = re.compile(r"\b(LH|LT)\s(\d{1,3})\b")
+ROOM_PATTERNS = [
+    (ROOM_WORD_RE, lambda m: "Room " + m[1]),
+    (ROOM_CODE_RE, lambda m: f"{m[1]}-{m[2]}"),
+    (ROOM_LH_RE, lambda m: f"{m[1]}-{m[2]}"),
+]
+
+
+def extract_teacher_room(text, codes, allow_trailing=False):
+    """Find a room and a teacher inside `text` and cut them out.
+    codes = teacher short codes known from the catalog, e.g. {"AP", "RP"} (empty when no scope).
+    allow_trailing: for timetable cells, a code at the end ("Placeholder Algebra AP") counts as initials.
+    Returns (leftover_text, found) with found = {"room", "teacher", "initials"} (empty string = not found)."""
+    found = {"room": "", "teacher": "", "initials": ""}
+
+    for rx, fmt in ROOM_PATTERNS:
+        m = rx.search(text)
+        if m:
+            found["room"] = fmt(m)
+            text = text[:m.start()] + " " + text[m.end():]
+            break
+
+    m = TEACHER_RE.search(text)
+    if m:
+        tokens = m[2].split()
+        dropped = []
+        while tokens and tokens[-1].lower().strip(".") in NAME_STOP:
+            dropped.insert(0, tokens.pop())
+        if tokens:
+            if len(tokens) == 1 and tokens[0].upper() in codes and tokens[0].isupper():
+                found["initials"] = tokens[0]          # "Dr. AP" -> initials AP
+            else:
+                found["teacher"] = f"{TITLES[m[1].lower()]} {' '.join(tokens)}"
+            text = text[:m.start()] + " " + " ".join(dropped) + " " + text[m.end():]
+
+    if not found["teacher"] and not found["initials"]:
+        m = re.search(r"\(\s*([A-Z]{2,4})\s*\)", text)          # "(AP)"
+        if m and m[1] in codes:
+            found["initials"] = m[1]
+            text = text[:m.start()] + " " + text[m.end():]
+        elif allow_trailing:
+            tokens = text.split()
+            if tokens and tokens[-1] in codes:                    # "... AP" or just "AP"
+                found["initials"] = tokens[-1]
+                text = " ".join(tokens[:-1])
+
+    text = re.sub(r"\s+(in|at|@)\s*$", "", text.strip(), flags=re.I)  # "... in Room 12" leaves a dangling "in"
+    return re.sub(r"\s+", " ", text).strip(" ,;-"), found
+
+
+def resolve_fields(found, subj, sim, scope):
+    """Turn what we found in the image into the final fields, recording the source of each.
+    sim = how well the subject matched the catalog (1.0 = exact); weak matches never fill from the catalog."""
+    can_fill = scope.scoped and subj is not None and sim >= CATALOG_FILL_MIN
+    out = {"teacher": "", "teacher_read": "", "teacher_source": "", "room": "", "room_source": ""}
+    if found["initials"]:
+        out.update(teacher=scope.teacher_codes.get(found["initials"], found["initials"]),
+                   teacher_read=found["initials"], teacher_source="image")
+    elif found["teacher"]:
+        out.update(teacher=found["teacher"], teacher_read=found["teacher"], teacher_source="image")
+    elif can_fill and subj.get("teacher"):
+        out.update(teacher=subj["teacher"]["name"], teacher_source="catalog")
+
+    if found["room"]:
+        out.update(room=found["room"], room_source="image")
+    elif can_fill and subj.get("room"):
+        out.update(room=subj["room"], room_source="catalog")
+    return out
+
+
+# --------------------------------------------------------------------------
 # 5a. Timetable parsing (grid + OCR text -> weekly lectures)
 # --------------------------------------------------------------------------
 TIME_RE = re.compile(r"^\d{1,2}\s*[:.\-–—]\s*\d{1,2}")
@@ -255,48 +346,95 @@ def next_weekday(day_name, today=None):
     return today + timedelta(days=ahead)
 
 
-def parse_timetable(rows, blocks, semester, today=None):
-    """rows = grid cells. Find which row/column holds the day names, then read the rest.
-    Returns (entries, cell_labels). cell_labels is for drawing in the UI."""
-    table = []  # table[r][c] = (cell_box, text)
+def read_table(rows, blocks):
+    """Attach the OCR text that sits inside each cell: table[r][c] = {box, text, blocks}."""
+    table = []
     for row in rows:
-        table.append([(c, text_in_cell(c, blocks)[0]) for c in row])
+        cells = []
+        for box in row:
+            text, inside = text_in_cell(box, blocks)
+            cells.append({"box": box, "text": text, "blocks": inside})
+        table.append(cells)
+    return table
 
-    # Which row has the day names?  (normal timetable: first row)
-    header_r = max(range(len(table)),
-                   key=lambda r: sum(1 for _, t in table[r] if match_day(t)))
-    day_cols = {c: match_day(t) for c, (_, t) in enumerate(table[header_r]) if match_day(t)}
-    if len(day_cols) < 2:
-        return [], []
 
+def detect_layout(table):
+    """Are the day names across the top ("across") or down the left side ("down")?
+    Returns (layout, index of the header row), or (None, None) if it does not look like a timetable."""
+    day_counts = [sum(1 for c in row if match_day(c["text"])) for row in table]
+    top = max(range(len(table)), key=day_counts.__getitem__)
+    side = [r for r, row in enumerate(table) if match_day(row[0]["text"])]
+    if day_counts[top] >= 2 and day_counts[top] >= len(side):
+        return "across", top
+    if len(side) >= 2:
+        # the header row of a "down" table holds the time slots
+        time_row = max(range(len(table)),
+                       key=lambda r: sum(1 for c in table[r] if TIME_RE.match(c["text"].strip())))
+        return "down", time_row
+    return None, None
+
+
+def timetable_cells(table):
+    """Yield (day, time_text, cell) for every content cell, whichever way the table is laid out."""
+    layout, idx = detect_layout(table)
+    if layout == "across":                       # days = columns, time slots = rows
+        day_cols = {c: match_day(cell["text"]) for c, cell in enumerate(table[idx]) if match_day(cell["text"])}
+        for r, row in enumerate(table):
+            if r == idx:
+                continue
+            time_txt = next((c["text"].strip() for c in row if TIME_RE.match(c["text"].strip())), "")
+            for c, day in day_cols.items():
+                if c < len(row):
+                    yield day, time_txt, row[c]
+    elif layout == "down":                       # days = rows, time slots = columns
+        header = table[idx]
+        for r, row in enumerate(table):
+            day = match_day(row[0]["text"])
+            if not day or r == idx:
+                continue
+            for c in range(1, len(row)):
+                head = header[c]["text"].strip() if c < len(header) else ""
+                yield day, head if TIME_RE.match(head) else "", row[c]
+
+
+def mean_conf(blocks):
+    return sum(b["conf"] for b in blocks) / len(blocks) if blocks else 0.0
+
+
+def entry_confidence(ocr_conf, matched_sim, scope):
+    """confidence = how sure OCR was x how well the text matched a known subject x scope factor.
+    Every part is computed or documented; nothing is invented per entry."""
+    subject_factor = matched_sim if matched_sim else UNKNOWN_SUBJECT_FACTOR
+    scope_factor = 1.0 if scope.scoped else NO_SCOPE_FACTOR
+    return round(min(ocr_conf, 0.99) * min(subject_factor, 1.0) * scope_factor, 2)
+
+
+def parse_timetable(rows, blocks, scope, today=None):
+    """Returns (entries, cell_labels). cell_labels is for drawing in the UI."""
+    table = read_table(rows, blocks)
     entries, labels = [], []
-    for r, row in enumerate(table):
-        if r == header_r:
+    for day, time_txt, cell in timetable_cells(table):
+        text = cell["text"]
+        if not text or text.lower() in SKIP_WORDS:
             continue
-        # the time label is the first cell of the row that looks like "07-08"
-        time_txt = next((t for _, t in row if TIME_RE.match(t.strip())), "")
-        for c, day in day_cols.items():
-            if c >= len(row):
-                continue
-            box, text = row[c]
-            if not text or text.lower() in SKIP_WORDS:
-                continue
-            subject, known = canonical_subject(text)
-            if not subject:
-                continue
-            labels.append({"box": box, "text": subject, "known": known})
-            entries.append({
-                "semester": semester,
-                "subject": subject,
-                "topic": f"{day} {time_txt}".strip() + " lecture",
-                "date": next_weekday(day, today).isoformat(),
-                "task": "Attend lecture" + (f" ({time_txt})" if time_txt else ""),
-                "kind": "lecture",
-                "day": day,
-                "time": time_txt,
-                "confidence": 0.99 if known else 0.7,
-                "source_box": box,
-            })
+        leftover, found = extract_teacher_room(text, set(scope.teacher_codes), allow_trailing=True)
+        if not leftover or leftover.lower() in SKIP_WORDS:
+            continue
+        subject, subj, sim = match_subject(leftover, scope)
+        fields = resolve_fields(found, subj, sim, scope)
+        labels.append({"box": cell["box"], "text": subject, "known": subj is not None})
+        entries.append({
+            "subject": subject,
+            "topic": f"{day} {time_txt}".strip() + " lecture",
+            "date": next_weekday(day, today).isoformat(),
+            "task": "Attend lecture" + (f" ({time_txt})" if time_txt else ""),
+            "kind": "lecture",
+            "day": day,
+            "time": time_txt,
+            **fields,
+            "confidence": entry_confidence(mean_conf(cell["blocks"]), sim, scope),
+            "source_box": cell["box"],
+        })
     return entries, labels
 
 
@@ -372,15 +510,16 @@ def group_lines(blocks):
     return out
 
 
-def find_subject_in(text):
+def find_subject_in(text, scope):
+    """Look for a subject inside a sentence. Returns (name, subject_dict_or_None, similarity)."""
     low = text.lower()
-    for s in sorted(KNOWN_SUBJECTS, key=len, reverse=True):  # longest first: "Advanced Python" before "Python"
-        if s.lower() in low:
-            return s, True
-    m = re.match(r"\s*([A-Za-z][A-Za-z+ ]{1,24}?)\s*[:\-–]\s+\S", text)
+    for s in sorted(scope.subjects, key=lambda s: len(s["name"]), reverse=True):  # "Advanced Python" before "Python"
+        if s["name"].lower() in low:
+            return s["name"], s, 1.0
+    m = re.match(r"\s*([A-Za-z][A-Za-z+ ]{1,24}?)\s*[:\-–]\s+\S", text)  # "Subject: ..." prefix
     if m:
-        return canonical_subject(m[1])
-    return "General", False
+        return match_subject(m[1], scope)
+    return "General", None, 0.0
 
 
 def clean_topic(text, subject, date_txt):
@@ -398,7 +537,7 @@ def clean_topic(text, subject, date_txt):
     return t[:60] or "General"
 
 
-def parse_notice(blocks, semester, today=None):
+def parse_notice(blocks, scope, today=None):
     """Every line that contains a date becomes one entry."""
     today = today or date.today()
     lines = group_lines(blocks)
@@ -411,44 +550,51 @@ def parse_notice(blocks, semester, today=None):
         # if the sentence continues on the next line (no date there), include it
         if i + 1 < len(lines) and not find_date(lines[i + 1]["text"], today)[0] and len(text) < 70:
             text += " " + lines[i + 1]["text"]
-        subject, known = find_subject_in(text)
+        original = text
+        text, found = extract_teacher_room(text, set(scope.teacher_codes))
+        subject, subj, sim = find_subject_in(text, scope)
         kind, label = "task", "Task"
         for rx, k, lab in KINDS:
             if re.search(rx, text, re.I):
                 kind, label = k, lab
                 break
         entries.append({
-            "semester": semester, "subject": subject,
+            "subject": subject,
             "topic": clean_topic(text, subject, d_txt),
             "date": d.isoformat(), "task": label, "kind": kind,
-            "source_text": text[:200],  # the original sentence, used as the announcement body
-            "confidence": round(min(ln["conf"], 0.99) * (1 if known else 0.85), 2),
+            **resolve_fields(found, subj, sim, scope),
+            "source_text": original[:200],  # the original sentence, used as the announcement body
+            "confidence": entry_confidence(ln["conf"], sim, scope),
             "source_box": ln["box"],
         })
-        labels.append({"box": ln["box"], "text": f"{subject} · {d.strftime('%d %b')}", "known": known})
+        labels.append({"box": ln["box"], "text": f"{subject} · {d.strftime('%d %b')}", "known": subj is not None})
     return entries, labels
 
 
-def parse_notes(blocks, semester, today=None):
+def parse_notes(blocks, scope, today=None):
     """Handwritten / dateless notes: use the first line as heading, tag with today's date."""
     today = today or date.today()
     lines = group_lines(blocks)
     if not lines:
         return [], []
     full = " ".join(l["text"] for l in lines)
-    subject, known = find_subject_in(full)
-    heading = lines[0]["text"][:60]
-    entry = {"semester": semester, "subject": subject, "topic": heading, "date": today.isoformat(),
-             "task": "Revise notes", "kind": "notes", "source_text": full[:200],
-             "confidence": round(sum(l["conf"] for l in lines) / len(lines) * (1 if known else 0.8), 2),
+    text, found = extract_teacher_room(full, set(scope.teacher_codes))
+    subject, subj, sim = find_subject_in(text, scope)
+    entry = {"subject": subject, "topic": lines[0]["text"][:60], "date": today.isoformat(),
+             "task": "Revise notes", "kind": "notes",
+             **resolve_fields(found, subj, sim, scope),
+             "source_text": full[:200],
+             "confidence": entry_confidence(mean_conf(lines), sim, scope),
              "source_box": lines[0]["box"]}
-    return [entry], [{"box": lines[0]["box"], "text": subject, "known": known}]
+    return [entry], [{"box": lines[0]["box"], "text": subject, "known": subj is not None}]
 
 
 # --------------------------------------------------------------------------
 # 6. Run everything and time each stage
 # --------------------------------------------------------------------------
-def analyze(data: bytes, filename: str, semester="sem4", today=None):
+def analyze(data: bytes, filename: str, semester="", course="", today=None):
+    """semester / course are catalog ids chosen by the user ("" = not chosen)."""
+    scope = make_scope(load_catalog(), course, semester)
     stages = []
 
     def stage(name, t0, note=""):
@@ -477,18 +623,19 @@ def analyze(data: bytes, filename: str, semester="sem4", today=None):
         t = time.perf_counter()
         mode, entries, labels = "notice", [], []
         if rows:
-            entries, labels = parse_timetable(rows, blocks, semester, today)
+            entries, labels = parse_timetable(rows, blocks, scope, today)
             mode = "timetable"
         if not entries:
-            entries, labels = parse_notice(blocks, semester, today)
+            entries, labels = parse_notice(blocks, scope, today)
             mode = "notice"
         if not entries:
-            entries, labels = parse_notes(blocks, semester, today)
+            entries, labels = parse_notes(blocks, scope, today)
             mode = "notes"
         stage("Extract subject / date / topic / task", t, f"{len(entries)} entries ({mode})")
 
         for e in entries:
-            e["page"] = p + 1
+            e.update(page=p + 1, course=scope.course_id, course_name=scope.course_name,
+                     semester=scope.semester_id, semester_name=scope.semester_name)
         all_entries += entries
         if preview_page is None:
             preview_page = {"image": img, "cells": [c for r in rows for c in r],
@@ -503,5 +650,8 @@ def analyze(data: bytes, filename: str, semester="sem4", today=None):
         "labels": preview_page["labels"],
         "entries": all_entries,
         "stages": stages,
+        "scope": scope.describe(),
+        "scoped": scope.scoped,
         "image": preview_page["image"],  # main.py turns this into a PNG
     }
+
