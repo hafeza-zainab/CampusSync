@@ -65,6 +65,14 @@ def test_api(b):
     for f in ("timetable_exif6.jpg", "timetable_exif3.jpg"):
         r = upload_api(f)
         check(f"EXIF-rotated photo {f} is read upright", r["mode"] == "timetable" and len(r["entries"]) == 11 and r["width"] > r["height"])
+    r = upload_api("timetable_teacher_room.png", {"course": "demo-a"})
+    check("course chosen but no semester: nothing is filled from the catalog",
+          all(e["teacher_source"] != "catalog" and e["room_source"] != "catalog" for e in r["entries"]))
+    r = upload_api("timetable_teacher_room.png")
+    check("nothing chosen: confidence is lowered (all entries under 0.80, so flagged 'check this')",
+          r["entries"] and max(e["confidence"] for e in r["entries"]) < 0.80, f"max {max(e['confidence'] for e in r['entries'])}")
+    check("nothing chosen: nothing is filled from the catalog",
+          all(e["teacher_source"] != "catalog" and e["room_source"] != "catalog" for e in r["entries"]))
     try:
         upload_api("notice.png", {"course": "main", "semester": "sem9"})
         check("unknown semester is rejected", False)
@@ -88,6 +96,7 @@ def test_demo_flow(b):
     pg.wait_for_function("document.getElementById('capText').innerText.startsWith('6')", timeout=90000); pg.wait_for_timeout(1200)
     check("demo: 11 lectures auto-tagged", pg.locator(".entry").count() == 11, f"{pg.locator('.entry').count()} entries")
     check("demo: grouped into 9 subject cards", pg.locator(".subject").count() == 9)
+    check("demo: the step list reports 42 cells", "42 cells" in pg.inner_text("#steps"))
     check("demo: all 5 pipeline steps ticked", pg.locator("#steps li.on").count() == 5)
     check("demo: boxes drawn on the image", pg.evaluate("(()=>{const c=document.getElementById('cv');const d=c.getContext('2d').getImageData(0,0,c.width,c.height).data;let n=0;for(let i=3;i<d.length;i+=4)if(d[i])n++;return n})()") > 10000)
     check("demo: course/semester dropdowns were filled", pg.input_value("#course") == "main" and pg.input_value("#sem") == "sem4")
@@ -122,11 +131,16 @@ def test_announcements(b):
     check("low confidence: post refused until 'I checked this' is ticked", "tick" in pg.locator(".rrow .status").inner_text())
     pg.check(".f-ok"); pg.locator(".rrow .post").click()
     check("low confidence: posts after ticking", "posted" in pg.locator(".rrow .status").inner_text())
+    pg.evaluate("showReview([{subject:'A1',date:'2026-12-11',topic:'t1',task:'Task',confidence:0.95,source_text:'x'},"
+                "{subject:'B1',date:'2026-12-12',topic:'t2',task:'Task',confidence:0.5,source_text:'y'}],'fake')")
+    pg.click("#postAll")
+    check("Post all skips the unchecked low-confidence row and says so", "1 posted" in pg.inner_text("#postMsg") and "1 need checking" in pg.inner_text("#postMsg"),
+          pg.inner_text("#postMsg"))
     # does the existing attendance app show them?
     app = new_page(ctx, errs)
     app.goto(BASE + "/campus/"); app.fill("#username", "Z"); app.click("text=Enter"); app.click("text=📢 Announcements")
     text = app.inner_text("#announceList")
-    check("announcements appear in the attendance app, 'by Vision'", text.count("— Vision") == 7, f"{text.count('— Vision')} found")
+    check("announcements appear in the attendance app, 'by Vision'", text.count("— Vision") == 8, f"{text.count('— Vision')} found")
     check("announcements: no page errors", not errs, str(errs))
     ctx.close()
 
@@ -162,6 +176,8 @@ def test_attendance_bridge(b):
     check("attendance app: stats panel shows percentages", "%" in app.inner_text("#stats"))
     app.reload(); app.fill("#username", "Z"); app.click("text=Enter")
     check("attendance app: marks survive a reload", app.locator(".lecture.present").count() == 2)
+    app.click("text=📢 Announcements"); app.fill("#msg", "hello"); app.click("button:text('Post')")
+    check("attendance app: an announcement shows the poster's role, not 'undefined'", "hello — student" in app.inner_text("#announceList"), app.inner_text("#announceList"))
 
     pg = new_page(ctx, errs)
     pg.goto(BASE + "/"); pg.click("#clear")
