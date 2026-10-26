@@ -100,7 +100,7 @@ def index():
 # the Vision page share one origin = one localStorage (see ../store.js). Only these files are
 # served, so nothing else in the project folder (.git, data/, ...) is exposed.
 CAMPUS_DIR = os.path.dirname(HERE)
-CAMPUS_FILES = {"index.html", "app.js", "data.js", "store.js", "style.css", "studypanel.html", "chatbot.html"}
+CAMPUS_FILES = {"index.html", "app.js", "data.js", "store.js", "style.css", "studypanel.html", "chatbot.html", "chat.js", "chat.css"}
 
 
 @app.get("/campus")
