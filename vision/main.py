@@ -1,0 +1,95 @@
+"""FastAPI server - the thin layer between the browser and pipeline.py.
+
+Run:   py -m uvicorn main:app --port 8000      (from inside the vision folder)
+Open:  http://localhost:8000
+
+Endpoints
+  POST   /api/analyze   upload image/PDF -> detections + entries, entries are auto-saved
+  GET    /api/entries   everything saved so far (the Study Panel reads this)
+  DELETE /api/entries   clear all (handy before re-recording the demo)
+"""
+import base64
+import json
+import os
+
+import cv2
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+
+import pipeline
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+STORE = os.path.join(HERE, "data", "entries.json")
+os.makedirs(os.path.dirname(STORE), exist_ok=True)
+
+app = FastAPI(title="CampusSync Vision")
+
+
+def load_entries():
+    try:
+        with open(STORE, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return []
+
+
+def save_entries(entries):
+    with open(STORE, "w", encoding="utf-8") as f:
+        json.dump(entries, f, indent=2)
+
+
+@app.post("/api/analyze")
+async def analyze(file: UploadFile = File(...), semester: str = Form("sem4")):
+    data = await file.read()
+    if len(data) > 15_000_000:
+        raise HTTPException(413, "File too large (15 MB max)")
+    try:
+        result = pipeline.analyze(data, file.filename or "upload", semester)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+    ok, png = cv2.imencode(".png", result.pop("image"))
+    result["image"] = "data:image/png;base64," + base64.b64encode(png.tobytes()).decode()
+
+    # auto-tag: save new entries, skip ones we already have (same subject/date/topic)
+    saved = load_entries()
+    seen = {(e["subject"], e["date"], e["topic"]) for e in saved}
+    added = 0
+    for e in result["entries"]:
+        e["source"] = file.filename
+        key = (e["subject"], e["date"], e["topic"])
+        e["is_new"] = key not in seen
+        if e["is_new"]:
+            saved.append({k: v for k, v in e.items() if k not in ("source_box", "is_new")})
+            seen.add(key)
+            added += 1
+    save_entries(saved)
+    result["added"] = added
+    return result
+
+
+@app.get("/api/entries")
+def entries():
+    return load_entries()
+
+
+@app.delete("/api/entries")
+def clear():
+    save_entries([])
+    return {"ok": True}
+
+
+@app.get("/")
+def index():
+    return FileResponse(os.path.join(HERE, "static", "index.html"))
+
+
+app.mount("/samples", StaticFiles(directory=os.path.join(HERE, "samples")), name="samples")
+
+
+@app.on_event("startup")
+def warm_up():
+    """Load the OCR model once at boot so the first upload (and the demo) is fast."""
+    import numpy as np
+    pipeline.run_ocr(np.full((64, 256, 3), 255, np.uint8))
