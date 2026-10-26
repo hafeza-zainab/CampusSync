@@ -38,6 +38,8 @@
     return node;
   }
 
+  // one-to-one conversations have one id for the pair, whoever is "me": dmId("Zainab","Meera") === dmId("Meera","Zainab")
+  const dmId = (a, b) => "dm:" + [a, b].sort().join("|");
   const uid = () => "m" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
   const timeOf = ts => new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   const dayKey = ts => { const d = new Date(ts); return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`; };
@@ -52,7 +54,8 @@
   // ---------------------------------------------------------------- storage (uses store.js)
   function seedData() {
     const now = Date.now(), H = 3600 * 1000, D = 24 * H;
-    const msg = (from, ago, text) => ({ id: uid(), convo: "class", from, ts: now - ago, type: "text", text });
+    const msg = (from, ago, text, c = "class") => ({ id: uid(), convo: c, from, ts: now - ago, type: "text", text });
+    const zm = dmId("Zainab", "Meera"), ak = dmId("Aarav", "Kabir");
     return {
       version: 1,
       messages: [
@@ -60,6 +63,10 @@
         msg("Meera", D + 2.5 * H, "Yes, Friday. I'll post my notes once I've cleaned them up."),
         msg("Kabir", 3 * H, "Reminder: the Python lab starts at 10 tomorrow."),
         msg("Zainab", 2 * H, "Thanks Kabir! I'll bring my laptop."),
+        msg("Meera", 5 * H, "Are you free to go over the DAA assignment tonight?", zm),
+        msg("Zainab", 4.5 * H, "Sure, 8pm works for me.", zm),
+        msg("Meera", 0.7 * H, "Great, I'll call you then.", zm),
+        msg("Kabir", 2 * H, "Did you finish the OS lab questions?", ak),
       ],
       reads: {},
     };
@@ -107,10 +114,13 @@
   // ---------------------------------------------------------------- rendering
   function renderConvoList() {
     ui.list.replaceChildren();
-    const items = [{ id: "class", title: "Class group", sub: "Everyone" }];
+    const items = [{ id: "class", title: "Class group" }]
+      .concat(USERS.filter(u => u !== me).map(u => ({ id: dmId(me, u), title: u })));
     items.forEach(c => {
       const msgs = convoMessages(c.id), last = msgs[msgs.length - 1], unread = unreadCount(c.id);
-      const preview = last ? `${last.from === me ? "You" : last.from}: ${last.text}` : "No messages yet";
+      // in the group show who spoke; in a one-to-one only mark your own messages
+      const who = last && last.from === me ? "You: " : (c.id === "class" && last ? last.from + ": " : "");
+      const preview = last ? who + last.text : "No messages yet";
       const btn = el("button", { className: "chat-convo" + (c.id === convo ? " active" : ""), type: "button",
         "aria-current": c.id === convo ? "true" : "false" },
         el("span", { className: "chat-convo-top" },
@@ -124,8 +134,8 @@
   }
 
   function renderHeader() {
-    ui.title.textContent = "Class group";
-    ui.subtitle.textContent = "Everyone · demo users";
+    ui.title.textContent = convo === "class" ? "Class group" : convo.slice(3).split("|").find(u => u !== me);
+    ui.subtitle.textContent = convo === "class" ? "Everyone · demo users" : "One-to-one · demo users";
   }
 
   function renderMessages(forceBottom) {
@@ -160,10 +170,10 @@
   }
 
   function render(forceBottom) {
-    renderConvoList();
     renderHeader();
     renderMessages(forceBottom);
-    markRead();
+    markRead();          // before drawing the list, so the unread badge of the open conversation is already gone
+    renderConvoList();
   }
 
   function openConvo(id) {
