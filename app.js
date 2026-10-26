@@ -193,6 +193,7 @@ function showTab(id) {
     t.classList.add("hidden")
   );
   document.getElementById(id).classList.remove("hidden");
+  if (id === "announcements") renderAnnouncements(); // show the list when the tab opens, not only after posting
 }
 
 function changeMonth(dir) {
