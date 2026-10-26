@@ -25,6 +25,15 @@ function login() {
   renderCalendar();
 }
 
+// Turns the end of a lecture time into [hour, minute].
+// data.js writes times like "07-08" or "12-01" (no minutes), the old code expected "09:00".
+// Accepts both. Hours below 7 are afternoon ("01" -> 13) because lectures don't start at 1am.
+function parseEndTime(text) {
+  const [h, m] = text.split(":").map(Number);
+  const hour = h < 7 ? h + 12 : h;
+  return [hour, m || 0];
+}
+
 /* UPDATED CALENDAR LOGIC */
 function renderCalendar() {
   const grid = document.getElementById("calendarGrid");
@@ -67,8 +76,8 @@ function renderCalendar() {
         const status = attendance[key];
 
         // Parse Lecture End Time
-        const endTimeStr = lec.time.split("-")[1]; // e.g., "09:00"
-        const [endHour, endMin] = endTimeStr.split(":").map(Number);
+        const endTimeStr = lec.time.split("-")[1]; // e.g., "09:00" or "08"
+        const [endHour, endMin] = parseEndTime(endTimeStr);
         const lectureEndTime = new Date(year, month, day, endHour, endMin);
 
         const isOver = now > lectureEndTime;
