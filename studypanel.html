@@ -1,0 +1,29 @@
+<form action="/upload" method="POST" enctype="multipart/form-data">
+    <h3>Upload Study Material</h3>
+    
+    <select name="semester" required>
+        <option value="">Select Semester</option>
+        <option value="sem1">Semester 1</option>
+        <option value="sem2">Semester 2</option>
+        <option value="sem3">Semester 3</option>
+        <option value="sem4">Semester 4</option>
+        <option value="sem5">Semester 5</option>
+        <option value="sem6">Semester 6</option>
+    </select>
+
+    <input type="text" name="subject" placeholder="Enter Subject (e.g. Physics)" required>
+    <input type="text" name="topic" placeholder="Enter Topic (e.g. Thermodynamics)" required>
+
+    <hr>
+    
+    <label>Visibility:</label>
+    <select name="visibility">
+        <option value="private">Private (Only Me)</option>
+        <option value="class">Entire Class</option>
+        <option value="selected">Selected Students</option>
+    </select>
+
+    <input type="file" name="studyMaterial" required>
+    <button type="submit">Upload to Folder</button>
+
+</form>

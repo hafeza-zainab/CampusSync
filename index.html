@@ -1,100 +1,89 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>CampusSync</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>College Attendance Tracker</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-
-<!-- LOGIN -->
-<div id="loginBox">
-  <h1>CampusSync</h1>
-
-  <input type="text" id="username" placeholder="Enter your name" />
-
-  <select id="role">
-    <option value="student">Student</option>
-    <option value="cr">CR</option>
-    <option value="acr">ACR</option>
-  </select>
-
-  <button onclick="login()">Enter</button>
-</div>
-
-
-
-
-
-<!-- DASHBOARD -->
-<div id="dashboard" class="hidden">
-
-  <h3 id="welcome"></h3>
-
-  <nav>
-    <button onclick="showTab('calendar')">📅 Calendar</button>
-    <button onclick="showTab('attendance')">📝 Attendance</button>
-    <button onclick="showTab('study')">📚 Study Panel</button>
-    <button onclick="showTab('announcements')">📢 Announcements</button>
-  </nav>
-
-  <!-- CALENDAR -->
-  <section id="calendar" class="tab">
-  <div class="calendar-header">
-    <button onclick="changeMonth(-1)">◀</button>
-    <h3 id="monthYear"></h3>
-    <button onclick="changeMonth(1)">▶</button>
+  <!-- LOGIN -->
+  <div id="loginBox" class="login-container">
+    <h2>College Attendance</h2>
+    <input type="text" id="username" placeholder="Enter your name">
+    <select id="role">
+      <option value="student">Student</option>
+      <option value="cr">CR</option>
+      <option value="acr">ACR</option>
+    </select>
+    <button onclick="login()">Enter</button>
   </div>
 
-  <div class="calendar-layout">
-    <div>
-      <div class="weekdays">
-        <div>Mon</div><div>Tue</div><div>Wed</div>
-        <div>Thu</div><div>Fri</div><div>Sat</div><div>Sun</div>
+  <!-- DASHBOARD -->
+  <div id="dashboard" class="hidden">
+    <header>
+      <h3 id="welcome"></h3>
+      <button onclick="logout()" class="logout-btn">Logout</button>
+    </header>
+
+    <nav class="tab-nav">
+      <button onclick="showTab('calendar')">📅 Calendar</button>
+      <button onclick="showTab('attendance')">📝 Attendance</button>
+      <button onclick="showTab('study')">📚 Study Panel</button>
+      <button onclick="showTab('announcements')">📢 Announcements</button>
+    </nav>
+
+    <!-- CALENDAR -->
+    <section id="calendar" class="tab">
+      <div class="calendar-header">
+        <button onclick="prevMonth()">◀</button>
+        <h3 id="monthYear"></h3>
+        <button onclick="nextMonth()">▶</button>
       </div>
+      <p class="calendar-hint">Click a subject to mark attendance.</p>
 
-      <div id="calendarGrid"></div>
-    </div>
+      <div class="calendar-layout">
+        <div class="calendar-main">
+          <div class="weekdays">
+            <div>Mon</div><div>Tue</div><div>Wed</div>
+            <div>Thu</div><div>Fri</div><div>Sat</div><div>Sun</div>
+          </div>
+          <div id="calendarGrid" class="calendar-grid"></div>
+        </div>
 
-    <aside id="statsPanel">
-      <h4>📊 Monthly Stats</h4>
-      <div id="stats"></div>
-    </aside>
+        <aside id="statsPanel" class="stats-panel">
+          <h4>📊 Monthly Stats</h4>
+          <div id="stats"></div>
+        </aside>
+      </div>
+    </section>
+
+    <!-- ATTENDANCE -->
+    <section id="attendance" class="tab hidden">
+      <h3>Self Attendance</h3>
+      <div id="attendanceList"></div>
+      <p id="warning"></p>
+      <div id="presentCount"></div>
+    </section>
+
+    <!-- STUDY PANEL -->
+    <section id="study" class="tab hidden">
+      <h3>Study Materials</h3>
+      <div id="materialsList"></div>
+    </section>
+
+    <!-- ANNOUNCEMENTS -->
+    <section id="announcements" class="tab hidden">
+      <h3>Announcements</h3>
+      <div class="announce-input">
+        <input type="text" id="msg" placeholder="Type announcement...">
+        <button onclick="postAnnouncement()">Post</button>
+      </div>
+      <div id="announceList"></div>
+    </section>
   </div>
-</section>
 
-
-
-  <!-- ATTENDANCE -->
-  <section id="attendance" class="tab hidden">
-    <h3>Self Attendance</h3>
-    <div id="attendanceList"></div>
-    <p id="warning"></p>
-  </section>
-
-  <!-- STUDY PANEL -->
-  <section id="study" class="tab hidden">
-    <h3>Study Material</h3>
-    <input id="topic" placeholder="Topic">
-    <button onclick="uploadMaterial()">Upload</button>
-    <div id="materials"></div>
-  </section>
-
-  <!-- ANNOUNCEMENTS -->
-  <section id="announcements" class="tab hidden">
-    <h3>Announcements</h3>
-
-    <div id="announceControls" class="hidden">
-      <input id="msg" placeholder="Announcement">
-      <button onclick="postAnnouncement()">Post</button>
-    </div>
-
-    <div id="announceList"></div>
-  </section>
-
-</div>
-
-<script src="data.js"></script>
-
+  <script src="data.js"></script>
+  <script src="app.js"></script>
 </body>
-<script src="app.js"></script>
 </html>

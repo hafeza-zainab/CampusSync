@@ -104,3 +104,29 @@ section {
 .stats-item {
   margin-bottom: 10px;
 }
+/* Lectures that are finished */
+.lecture {
+    border-radius: 4px;
+    padding: 4px;
+    margin-top: 5px;
+    font-size: 0.8em;
+    transition: 0.3s;
+}
+
+/* Status Colors */
+.lecture.present {
+    background-color: #2ecc71 !important; /* Green */
+    color: white !important;
+    border-left: 5px solid #1b5e20;
+}
+
+.lecture.absent {
+    background-color: #e74c3c !important; /* Red */
+    color: white !important;
+    border-left: 5px solid #b71c1c;
+}
+
+/* Future lectures are slightly transparent */
+.lecture:not(.present):not(.absent) {
+    opacity: 0.8;
+}
