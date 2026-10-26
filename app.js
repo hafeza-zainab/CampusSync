@@ -145,7 +145,7 @@ function renderMaterials() {
 function postAnnouncement() {
   announcements.push({
     msg: msg.value,
-    by: user.role
+    by: currentRole
   });
   renderAnnouncements();
 }
