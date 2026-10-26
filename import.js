@@ -12,6 +12,11 @@
   let frame = null;
 
   function build() {
+    const css = document.createElement("link");           // gives the frame a real size (see import.css)
+    css.rel = "stylesheet";
+    css.href = "import.css";
+    document.head.append(css);
+
     frame = document.createElement("iframe");
     frame.id = "importFrame";
     frame.title = "CampusSync Vision: import from a screenshot";

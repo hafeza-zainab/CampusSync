@@ -260,6 +260,8 @@ def test_import(b):
     app.wait_for_function("document.getElementById('importFrame').contentDocument && document.getElementById('importFrame').contentDocument.getElementById('file')", timeout=15000)
     vf = app.frame(url=re.compile("embedded=1"))
     check("import: opens Vision inside the app", app.locator("#import").is_visible() and vf is not None)
+    box = app.locator("#importFrame").bounding_box()
+    check("import: the embedded Vision frame has a usable size (not the 300x150 browser default)", box["width"] > 900 and box["height"] >= 600, f"{box['width']:.0f}x{box['height']:.0f}")
     check("import: embedded Vision hides its own header (the app nav is above)", vf.evaluate("getComputedStyle(document.querySelector('header')).display") == "none")
 
     # notice -> announcements (existing review card) and -> Study Panel store

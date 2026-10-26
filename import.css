@@ -1,0 +1,13 @@
+/* "Import from screenshot" tab: the embedded Vision page needs a real size (an iframe defaults to 300x150). */
+#import { font-size: 14px; }
+.import-intro { max-width: 900px; }
+#importFrame {
+  display: block;
+  width: 100%;
+  height: clamp(640px, calc(100vh - 230px), 1100px);
+  margin-top: 10px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  background: #0f1220;      /* the Vision page's own background, so there is no white flash while it loads */
+}
+#import a { color: #1a5fd0; }
