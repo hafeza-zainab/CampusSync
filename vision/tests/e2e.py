@@ -8,8 +8,10 @@ Run this after ANY code change (and before recording):
 It uses fresh browser profiles, resets the saved Study Panel entries at the start and end, and exits with
 a non-zero code if anything fails. It tests with the SYNTHETIC images in samples/ (run make_sample.py first).
 """
+import datetime
 import json
 import os
+import re
 import sys
 import urllib.request
 
@@ -209,6 +211,121 @@ def test_attendance_bridge(b):
     ctx.close()
 
 
+def chat_conv(pg, name):
+    """The conversation-list button whose TITLE is exactly `name` (previews can mention other names)."""
+    return pg.locator(".chat-convo", has=pg.locator(".chat-convo-title", has_text=re.compile(f"^{name}$")))
+
+
+def chat_open(ctx, user, errors, dialogs):
+    pg = ctx.new_page()
+    pg.on("pageerror", lambda e: errors.append(str(e)[:100]))
+    pg.on("dialog", lambda d: (dialogs.append(d.message), d.accept()))
+    pg.goto(BASE + "/campus/"); pg.fill("#username", user); pg.click("text=Enter")
+    pg.click(".tab-nav button >> text=Chat"); pg.select_option("#chat-as", user)
+    return pg
+
+
+def test_chat(b):
+    errs, dialogs = [], []
+    ctx = b.new_context(viewport={"width": 1366, "height": 768})
+    z = chat_open(ctx, "Zainab", errs, dialogs)
+    check("chat: old stub is gone (no handleResponse / Public-Private buttons)", "handleResponse" not in urllib.request.urlopen(BASE + "/campus/chatbot.html").read().decode())
+    check("chat: the tab starts hidden-until-clicked and is built by chat.js", z.locator("#chat").is_visible() and z.locator(".tab-nav button", has_text="Chat").count() == 1)
+    check("chat: seeded on first load (4 group messages + 1 open request, day separators)",
+          z.locator(".chat-msg").count() == 5 and z.locator(".chat-request .chat-status.open").count() == 1 and z.locator(".chat-day").count() == 2)
+    check("chat: demo-users notice is shown", "Demo users" in z.inner_text(".chat-demo") and "no server sync" in z.inner_text(".chat-demo"))
+    check("chat: conversation list = group + 3 classmates", z.eval_on_selector_all(".chat-convo-title", "e => e.map(x => x.textContent)") == ["Class group", "Aarav", "Meera", "Kabir"])
+    check("chat: unread count shown on the Meera one-to-one", chat_conv(z, "Meera").locator(".chat-badge").inner_text() == "2")
+
+    # composer
+    z.fill("#chat-input", "Hello <b>bold</b> <img src=x onerror=window.__pwned=1>"); z.press("#chat-input", "Enter")
+    last = z.locator(".chat-msg").last
+    check("composer: Enter sends; typed HTML is shown as plain text (no <b>/<img> created)",
+          "<b>bold</b>" in last.inner_text() and z.locator("#chat b, #chat img").count() == 0 and z.evaluate("window.__pwned") is None)
+    z.fill("#chat-input", "a"); z.press("#chat-input", "Shift+Enter"); z.type("#chat-input", "b")
+    n = z.locator(".chat-msg").count()
+    check("composer: Shift+Enter adds a line instead of sending", z.input_value("#chat-input") == "a\nb" and z.locator(".chat-msg").count() == n)
+    z.press("#chat-input", "Enter")
+    check("composer: multi-line message is kept", z.locator(".chat-text").last.inner_text() == "a\nb")
+    z.fill("#chat-input", "    "); z.press("#chat-input", "Enter")
+    check("composer: whitespace-only is ignored", z.locator(".chat-msg").count() == n + 1)
+    check("messages: newest message is scrolled into view",
+          z.evaluate("(() => { const m = document.querySelector('.chat-messages'); return m.scrollHeight - m.scrollTop - m.clientHeight < 5; })()"))
+
+    # one-to-one
+    chat_conv(z, "Meera").click()
+    check("one-to-one: opening it shows its messages and clears its unread badge", z.locator(".chat-msg").count() == 3 and chat_conv(z, "Meera").locator(".chat-badge").count() == 0)
+    z.fill("#chat-input", "Calling at 8!"); z.press("#chat-input", "Enter")
+    chat_conv(z, "Class group").click()
+    check("one-to-one: a direct message does not appear in the class group", "Calling at 8!" not in z.inner_text(".chat-messages"))
+
+    # a second tab as another user, live sync, privacy
+    a = chat_open(ctx, "Aarav", errs, dialogs)
+    check("one-to-one: Aarav cannot see the Zainab/Meera conversation", a.eval_on_selector_all(".chat-convo-title", "e => e.map(x => x.textContent)") == ["Class group", "Zainab", "Meera", "Kabir"] and "Calling at 8!" not in a.inner_text("#chat"))
+    z.fill("#chat-input", "live sync test"); z.press("#chat-input", "Enter")
+    a.wait_for_function("document.querySelector('.chat-messages').innerText.includes('live sync test')", timeout=5000)
+    check("sync: a message sent in one tab appears live in the other tab", True)
+
+    # note request form
+    z.click("text=Request notes")
+    dlg = z.locator("dialog.chat-dialog")
+    fields = dlg.locator("select, input, textarea").evaluate_all("e => e.map(x => x.tagName + ':' + x.type)")
+    check("request form: exactly three inputs (Subject, Date, Topic)", fields == ["SELECT:select-one", "INPUT:date", "INPUT:text"], str(fields))
+    check("request form: subjects come from the timetable", z.eval_on_selector_all("#chat-req-subject option", "e => e.map(x => x.textContent)")[1:3] == ["Hindi", "OOP C++"])
+    check("request form: date defaults to today", z.input_value("#chat-req-date") == datetime.date.today().isoformat())
+    z.click("text=Send request")
+    check("request form: submitting empty shows an inline error, no popup", z.inner_text(".chat-req-error") == "Choose a subject." and dlg.is_visible())
+    z.select_option("#chat-req-subject", "Python"); z.click("text=Send request")
+    check("request form: topic is required", z.inner_text(".chat-req-error") == "Write a short topic.")
+    z.fill("#chat-req-topic", "   <b>File</b>   handling  "); z.click("text=Send request")
+    card = z.locator(".chat-request").last
+    check("request: posts a card with Subject / Date / Topic (HTML shown as text, spaces cleaned)",
+          not dlg.is_visible() and "Python" in card.inner_text() and "<b>File</b> handling" in card.inner_text() and card.locator("b").count() == 0)
+    check("request: starts Open and the requester has no 'I have these notes' button", card.locator(".chat-status").inner_text() == "Open" and card.locator("button").count() == 0)
+    z.click("text=Request notes"); z.keyboard.press("Escape")
+    check("request form: Esc closes it and focus returns to the Request button", not dlg.is_visible() and "Request notes" in z.evaluate("document.activeElement.textContent"))
+
+    acard = a.locator(".chat-request").last
+    a.wait_for_function("document.querySelectorAll('.chat-request').length === 2", timeout=5000)
+    check("request: another user sees it Open with an 'I have these notes' button", acard.locator(".chat-status").inner_text() == "Open" and acard.locator("button").count() == 1)
+    acard.locator("button").click()
+    check("request: pressing it marks it Shared with name and time", acard.locator(".chat-status").inner_text() == "Shared" and "by Aarav at" in acard.locator(".chat-req-by").inner_text())
+    z.wait_for_function("(() => { const c = document.querySelectorAll('.chat-request'); return c[c.length-1].querySelector('.chat-status').textContent === 'Shared'; })()", timeout=5000)
+    zc = z.locator(".chat-request").last
+    check("request: the requester's tab shows Shared live, with who and when", "by Aarav at" in zc.locator(".chat-req-by").inner_text() and zc.locator("button").count() == 0)
+    k = chat_open(ctx, "Kabir", errs, dialogs)
+    check("request: a third user sees Shared and no button", k.locator(".chat-request").last.locator(".chat-status").inner_text() == "Shared" and k.locator(".chat-request").last.locator("button").count() == 0)
+    chat_conv(z, "Meera").click(); z.click("text=Request notes")
+    check("request: inside a one-to-one it says where it will be sent", z.inner_text(".chat-req-target") == "Sending to: Meera")
+    z.select_option("#chat-req-subject", "EVS"); z.fill("#chat-req-topic", "Water pollution"); z.click("text=Send request")
+    check("request: lands in that one-to-one, not in the group", z.locator(".chat-request").count() == 1)
+
+    # persistence + reset
+    z.reload(); z.fill("#username", "Zainab"); z.click("text=Enter"); z.click(".tab-nav button >> text=Chat")
+    check("persistence: messages survive a reload", "live sync test" in z.inner_text(".chat-messages"))
+    z.click("text=Reset chat")
+    check("reset: first click only asks to confirm (no popup)", z.locator("text=Click again to reset").count() == 1 and "live sync test" in z.inner_text(".chat-messages"))
+    z.click("text=Click again to reset")
+    check("reset: second click restores the seed data", z.locator(".chat-msg").count() == 5 and "live sync test" not in z.inner_text(".chat-messages"))
+
+    # quality bar at both screen sizes
+    for w, h in ((1920, 1080), (1366, 768)):
+        z.set_viewport_size({"width": w, "height": h}); z.wait_for_timeout(200)
+        check(f"layout {w}x{h}: no horizontal scroll (page and chat)",
+              z.evaluate("document.documentElement.scrollWidth <= document.documentElement.clientWidth && document.querySelector('#chat').scrollWidth <= document.querySelector('#chat').clientWidth"))
+        small = z.evaluate("""() => [...document.querySelectorAll('#chat *')].filter(e => e.childNodes.length && [...e.childNodes].some(n => n.nodeType === 3 && n.textContent.trim()) && e.offsetParent !== null)
+                                 .map(e => parseFloat(getComputedStyle(e).fontSize)).filter(s => s < 13).length""")
+        check(f"layout {w}x{h}: no visible chat text smaller than 13px", small == 0, f"{small} elements")
+        check(f"layout {w}x{h}: the composer is inside the visible area",
+              z.evaluate("window.scrollTo(0, 0) || document.querySelector('.chat-composer').getBoundingClientRect().bottom <= window.innerHeight"))
+    z.focus("#chat-input"); z.keyboard.press("Tab")
+    outline = z.evaluate("getComputedStyle(document.activeElement).outlineWidth + ' ' + getComputedStyle(document.activeElement).outlineStyle")
+    check("keyboard: Tab from the message box reaches Send with a visible focus outline", "Send" in z.evaluate("document.activeElement.textContent") and outline.startswith("3px") and "solid" in outline, outline)
+    check("chat: no alert()/confirm()/prompt() popups were shown during the whole chat test", dialogs == [], str(dialogs))
+    check("chat: no page errors", not errs, str(errs))
+    ctx.close()
+
+
 def main():
     try:
         api("/api/entries")
@@ -217,7 +334,7 @@ def main():
     api("/api/entries", "DELETE")
     with sync_playwright() as p:
         b = p.chromium.launch()
-        for test in (test_api, test_demo_flow, test_announcements, test_catalog, test_attendance_bridge):
+        for test in (test_api, test_demo_flow, test_announcements, test_catalog, test_attendance_bridge, test_chat):
             print(f"\n== {test.__name__}")
             try:
                 test(b)
