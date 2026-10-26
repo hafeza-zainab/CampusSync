@@ -9,7 +9,14 @@ if (savedTimetable) {
   Object.keys(timetable).forEach(day => delete timetable[day]);
   Object.assign(timetable, savedTimetable);
 }
-let currentDate = new Date(2026, 1); // Feb 2026
+let currentDate = new Date(new Date().getFullYear(), new Date().getMonth()); // the current month
+
+// Per-subject numbers for the month on screen. renderCalendar() fills them; checkWarnings() and the stats read them.
+// (They used to be declared inside renderCalendar, so checkWarnings could not see them: that was the broken 75% warning.)
+let subjectCount = {};     // lectures already held this month (their end time has passed)
+let subjectPresent = {};   // held lectures marked present
+let subjectAbsent = {};    // held lectures marked absent
+let subjectScheduled = {}; // all lectures in the timetable this month, held or not
 let currentUser = null;
 let currentRole = null;
 
@@ -66,8 +73,10 @@ function renderCalendar() {
     grid.appendChild(document.createElement("div"));
   }
 
-  let subjectCount = {};
-  let subjectPresent = {};
+  subjectCount = {};
+  subjectPresent = {};
+  subjectAbsent = {};
+  subjectScheduled = {};
 
   for (let day = 1; day <= daysInMonth; day++) {
     const box = document.createElement("div");
@@ -92,10 +101,14 @@ function renderCalendar() {
         const isOver = now > lectureEndTime;
 
         // Statistics Logic
+        subjectScheduled[lec.subject] = (subjectScheduled[lec.subject] || 0) + 1;
         if (isOver) {
           subjectCount[lec.subject] = (subjectCount[lec.subject] || 0) + 1;
           if (status === "present") {
             subjectPresent[lec.subject] = (subjectPresent[lec.subject] || 0) + 1;
+          }
+          if (status === "absent") {
+            subjectAbsent[lec.subject] = (subjectAbsent[lec.subject] || 0) + 1;
           }
         }
 
@@ -111,14 +124,8 @@ function renderCalendar() {
 
         l.innerText = `${lec.time} ${lec.subject}`;
         
-        // Only allow marking if lecture is over
-        l.onclick = () => {
-          if (isOver) {
-            markAttendance(key);
-          } else {
-            alert("This lecture hasn't finished yet! Attendance opens after " + endTimeStr);
-          }
-        };
+        // Only allow marking if lecture is over (the menu says so when it is not)
+        l.onclick = () => openAttendanceMenu(key, l, isOver, endTimeStr);
 
         box.appendChild(l);
       });
@@ -126,11 +133,69 @@ function renderCalendar() {
     grid.appendChild(box);
   }
 
-  // Render stats (remains same)
-  for (let sub in subjectCount) {
-    const percent = Math.round(((subjectPresent[sub] || 0) / subjectCount[sub]) * 100);
-    statsDiv.innerHTML += `<p>${sub}: <strong>${percent}%</strong></p>`;
-  }
+  renderStats(statsDiv);
+  renderAttendanceTab();
+  checkWarnings();
+}
+
+// One row of numbers per subject for the month on screen.
+function monthRows() {
+  return Object.keys(subjectScheduled).map(sub => {
+    const held = subjectCount[sub] || 0;
+    const present = subjectPresent[sub] || 0;
+    const absent = subjectAbsent[sub] || 0;
+    return { sub, scheduled: subjectScheduled[sub], held, present, absent,
+             unmarked: held - present - absent,
+             percent: held ? Math.round((present / held) * 100) : null };
+  });
+}
+
+// small helper: <tag class="cls">text</tag> (text is added as text, never as HTML)
+function h(tag, cls, text) {
+  const node = document.createElement(tag);
+  if (cls) node.className = cls;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+// Side panel: per subject  attended / held (percent), lectures this month, absent, unmarked
+function renderStats(statsDiv) {
+  const rows = monthRows();
+  if (!rows.length) statsDiv.append(h("p", "stat-empty", "No lectures in the timetable this month."));
+  rows.forEach(r => {
+    const low = r.percent !== null && r.percent < 75;
+    const row = h("div", "stat-row" + (low ? " low" : ""));
+    row.append(h("div", "stat-name", (low ? "⚠ " : "") + r.sub));
+    row.append(h("div", "stat-main", r.held
+      ? `${r.present} of ${r.held} held attended: ${r.percent}%`
+      : "No lecture held yet"));
+    row.append(h("div", "stat-sub", `${r.scheduled} this month · ${r.absent} absent · ${Math.max(r.unmarked, 0)} unmarked`));
+    statsDiv.append(row);
+  });
+}
+
+// The Attendance tab: the same numbers as a table, plus the overall figure
+function renderAttendanceTab() {
+  const list = document.getElementById("attendanceList");
+  if (!list) return;
+  list.replaceChildren();
+  const rows = monthRows();
+  const table = h("table", "attend-table");
+  const head = h("tr");
+  ["Subject", "This month", "Held", "Attended", "Absent", "Unmarked", "%"].forEach(t => head.append(h("th", "", t)));
+  table.append(head);
+  rows.forEach(r => {
+    const tr = h("tr", r.percent !== null && r.percent < 75 ? "low" : "");
+    [r.sub, r.scheduled, r.held, r.present, r.absent, Math.max(r.unmarked, 0), r.percent === null ? "–" : r.percent + "%"]
+      .forEach(v => tr.append(h("td", "", String(v))));
+    table.append(tr);
+  });
+  list.append(h("p", "attend-month", document.getElementById("monthYear").innerText));
+  list.append(table);
+  const held = rows.reduce((n, r) => n + r.held, 0), present = rows.reduce((n, r) => n + r.present, 0);
+  document.getElementById("presentCount").textContent = held
+    ? `Overall this month: ${present} of ${held} held lectures attended (${Math.round((present / held) * 100)}%)`
+    : "No lectures held yet this month.";
 }
 
 /* STUDY MATERIAL */
@@ -168,35 +233,68 @@ function renderAnnouncements() {
   });
 }
 
-function markAttendance(key) {
-  const choice = prompt("Type P for Present or A for Absent");
-
-  if (choice === "P" || choice === "p") {
-    attendance[key] = "present";
-  } else if (choice === "A" || choice === "a") {
-    attendance[key] = "absent";
-  }
+// status: "present", "absent", or null to clear the mark. The stored shape is unchanged: attendance[key] = "present" | "absent".
+function markAttendance(key, status) {
+  if (status) attendance[key] = status;
+  else delete attendance[key];
   saveStore("attendance", attendance);
-
+  closeAttendanceMenu();
   renderCalendar();
-    checkWarnings();
 }
 
+function closeAttendanceMenu() {
+  const old = document.getElementById("attendMenu");
+  if (old) old.remove();
+  document.removeEventListener("keydown", attendanceMenuKey);
+}
+function attendanceMenuKey(e) { if (e.key === "Escape") closeAttendanceMenu(); }
+
+// The little menu under a clicked lecture: Present / Absent / Clear (instead of the old prompt() popup)
+function openAttendanceMenu(key, anchor, isOver, endTimeStr) {
+  closeAttendanceMenu();
+  const menu = h("div", "attend-menu");
+  menu.id = "attendMenu";
+  menu.setAttribute("role", "dialog");
+  menu.setAttribute("aria-label", "Mark attendance");
+  if (!isOver) {
+    const [eh, em] = parseEndTime(endTimeStr);   // "08" -> 8:00, "01" -> 13:00
+    menu.append(h("p", "", `This lecture hasn't finished yet. Attendance opens after ${eh}:${String(em).padStart(2, "0")}.`));
+  } else {
+    [["Present", "present"], ["Absent", "absent"], ["Clear", null]].forEach(([label, status]) => {
+      const btn = h("button", "attend-" + (status || "clear"), label);
+      btn.type = "button";
+      btn.onclick = () => markAttendance(key, status);
+      menu.append(btn);
+    });
+  }
+  const close = h("button", "attend-close", "Close");
+  close.type = "button";
+  close.onclick = closeAttendanceMenu;
+  menu.append(close);
+  const r = anchor.getBoundingClientRect();
+  menu.style.left = Math.round(r.left + window.scrollX) + "px";
+  menu.style.top = Math.round(r.bottom + window.scrollY + 4) + "px";
+  document.body.append(menu);
+  menu.querySelector("button").focus();
+  document.addEventListener("keydown", attendanceMenuKey);
+}
+
+// Fills the 75% warning (Attendance tab + top of the stats panel). No popup: it stays visible.
 function checkWarnings() {
-  let warnings = [];
+  const warnings = monthRows()
+    .filter(r => r.percent !== null && r.percent < 75)
+    .map(r => `${r.sub} below 75% (${r.percent}%)`);
 
-  for (let sub in subjectCount) {
-    const percent = Math.round(
-      ((subjectPresent[sub] || 0) / subjectCount[sub]) * 100
-    );
-    if (percent < 75) {
-      warnings.push(`${sub} below 75%`);
-    }
-  }
+  const tabWarning = document.getElementById("warning");
+  if (tabWarning) tabWarning.textContent = warnings.length ? "⚠ Attendance warning: " + warnings.join(", ") : "All subjects are at or above 75% this month.";
 
-  if (warnings.length) {
-    alert("⚠ Attendance Warning:\n" + warnings.join("\n"));
+  const statsDiv = document.getElementById("stats");
+  if (warnings.length && statsDiv) {
+    const banner = h("p", "stat-warning", "⚠ Below 75%: " + warnings.length + " subject" + (warnings.length > 1 ? "s" : ""));
+    banner.setAttribute("role", "status");
+    statsDiv.prepend(banner);
   }
+  return warnings;
 }
 
 function showTab(id) {

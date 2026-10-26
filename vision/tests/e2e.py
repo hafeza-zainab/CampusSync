@@ -61,6 +61,17 @@ def new_page(ctx, errors):
     return pg
 
 
+def prev_month(pg):
+    """Marks are made in the PREVIOUS month so the test works on any day of the month (lectures there are all over)."""
+    pg.click("text=◀")
+
+
+def mark_attendance(pg, nth, label):
+    """Click the nth lecture in the calendar and choose Present / Absent / Clear from the small menu."""
+    pg.locator(".lecture").nth(nth).click()
+    pg.click(f".attend-menu button:text-is('{label}')")
+
+
 def test_api(b):
     cat = api("/api/catalog")
     check("catalog endpoint lists courses", len(cat["courses"]) >= 2, f"{[c['id'] for c in cat['courses']]}")
@@ -165,6 +176,51 @@ def test_catalog(b):
     ctx.close()
 
 
+def test_attendance(b):
+    """Step A: attendance by month / day / subject, green / red / neutral, monthly stats, 75% warning."""
+    errs, dialogs = [], []
+    ctx = b.new_context(viewport={"width": 1400, "height": 1000})
+    pg = ctx.new_page()
+    pg.on("pageerror", lambda e: errs.append(str(e)[:100]))
+    pg.on("dialog", lambda d: (dialogs.append(d.type), d.accept()))
+    pg.goto(BASE + "/campus/"); pg.fill("#username", "Z"); pg.click("text=Enter")
+    now = datetime.date.today()
+    check("attendance: opens on the current month", pg.inner_text("#monthYear") == now.strftime("%B %Y"), pg.inner_text("#monthYear"))
+    prev_month(pg)
+    check("attendance: month navigation goes back one month", pg.inner_text("#monthYear") != now.strftime("%B %Y"))
+    hindi = pg.eval_on_selector_all(".lecture", "e => e.map((x, i) => [i, x.textContent]).filter(t => t[1].includes('Hindi')).map(t => t[0])")
+    check("attendance: each day lists its lectures by subject (Hindi appears on Mondays)", len(hindi) >= 4, f"{len(hindi)} Hindi lectures")
+    for i in hindi[:3]:
+        mark_attendance(pg, i, "Present")
+    mark_attendance(pg, hindi[3], "Absent")
+    colors = pg.evaluate("""() => ({
+        present: getComputedStyle(document.querySelector('.lecture.present')).backgroundColor,
+        absent: getComputedStyle(document.querySelector('.lecture.absent')).backgroundColor,
+        unmarked: getComputedStyle([...document.querySelectorAll('.lecture:not(.present):not(.absent)')][0]).backgroundColor })""")
+    check("attendance: attended = green, not attended = red, unmarked = neutral grey",
+          colors == {"present": "rgb(46, 204, 113)", "absent": "rgb(231, 76, 60)", "unmarked": "rgb(204, 204, 204)"}, str(colors))
+    stored = json.loads(pg.evaluate("localStorage.getItem('campussync.attendance')"))
+    check("attendance: stored shape unchanged ({'YYYY-M-D-Subject-time': 'present'|'absent'})",
+          len(stored) == 4 and set(stored.values()) == {"present", "absent"} and all(re.match(r"^\d{4}-\d{1,2}-\d{1,2}-.+-\d{2}-\d{2}$", k) for k in stored), str(stored))
+    row = pg.locator(".stat-row", has=pg.locator(".stat-name", has_text="Hindi")).first
+    check("stats panel: Hindi shows 3 of 4 held attended = 75%, with the month's total", "3 of 4 held attended: 75%" in row.inner_text() and f"{len(hindi)} this month" in row.inner_text() and "1 absent" in row.inner_text(), row.inner_text().replace("\n", " | "))
+    check("stats panel: 75% exactly is not flagged, subjects under 75% are", "low" not in (row.get_attribute("class") or "") and pg.locator(".stat-row.low").count() >= 1)
+    check("75% warning: a visible banner (no popup) names the subjects below 75%", pg.locator(".stat-warning").count() == 1 and "Below 75%" in pg.inner_text(".stat-warning"))
+    pg.click(".tab-nav button >> text=Attendance")
+    check("attendance tab: shows the same numbers as a table, with the warning text and the overall figure",
+          pg.locator(".attend-table tr").count() >= 8 and "below 75%" in pg.inner_text("#warning") and "3 of" in pg.inner_text("#presentCount"))
+    pg.click(".tab-nav button >> text=Calendar")
+    pg.locator(".lecture.absent").first.click(); pg.click(".attend-menu button:text-is('Clear')")
+    check("attendance: Clear removes a mark (back to neutral)", pg.locator(".lecture.absent").count() == 0 and len(json.loads(pg.evaluate("localStorage.getItem('campussync.attendance')"))) == 3)
+    pg.click("text=▶"); pg.click("text=▶")
+    pg.locator(".lecture").first.click()
+    check("attendance: a lecture that is not over cannot be marked (the menu says when it opens)", "hasn't finished yet" in pg.inner_text(".attend-menu") and pg.locator(".attend-menu button:text-is('Present')").count() == 0)
+    pg.keyboard.press("Escape")
+    check("attendance: Esc closes the menu", pg.locator(".attend-menu").count() == 0)
+    check("attendance: no alert()/prompt() popups and no page errors", not dialogs and not errs, str(dialogs + errs))
+    ctx.close()
+
+
 def test_attendance_bridge(b):
     errs = []
     ctx = b.new_context(viewport={"width": 1500, "height": 1000})
@@ -172,11 +228,12 @@ def test_attendance_bridge(b):
     app.goto(BASE + "/campus/"); app.fill("#username", "Z"); app.click("text=Enter")
     first = app.inner_text("#monthYear"); app.click("text=▶"); second = app.inner_text("#monthYear"); app.click("text=◀")
     check("attendance app: month buttons work", first != second and app.inner_text("#monthYear") == first)
-    app.locator(".lecture").first.click(); app.locator(".lecture").nth(3).click()
+    prev_month(app)
+    mark_attendance(app, 0, "Present"); mark_attendance(app, 3, "Present")
     marks = app.evaluate("localStorage.getItem('campussync.attendance')")
     check("attendance app: lectures can be marked (time format fixed) and are saved", marks and marks.count("present") == 2, marks)
     check("attendance app: stats panel shows percentages", "%" in app.inner_text("#stats"))
-    app.reload(); app.fill("#username", "Z"); app.click("text=Enter")
+    app.reload(); app.fill("#username", "Z"); app.click("text=Enter"); prev_month(app)
     check("attendance app: marks survive a reload", app.locator(".lecture.present").count() == 2)
     app.click("text=📢 Announcements"); app.fill("#msg", "hello"); app.click("button:text('Post')")
     check("attendance app: an announcement shows the poster's role, not 'undefined'", "hello — student" in app.inner_text("#announceList"), app.inner_text("#announceList"))
@@ -193,14 +250,14 @@ def test_attendance_bridge(b):
     pg.click("#attendConfirm"); pg.wait_for_timeout(300)
     check("attendance data is untouched by the replace", pg.evaluate("localStorage.getItem('campussync.attendance')") == marks)
     cal = new_page(ctx, errs)
-    cal.goto(BASE + "/campus/"); cal.fill("#username", "Z"); cal.click("text=Enter")
+    cal.goto(BASE + "/campus/"); cal.fill("#username", "Z"); cal.click("text=Enter"); prev_month(cal)
     subjects = cal.eval_on_selector_all(".lecture", "e => [...new Set(e.map(x => x.textContent.replace(/^[0-9:-]+ /, '')))]")
     check("attendance app now shows the new subjects", "Placeholder Algebra" in subjects and "Hindi" not in subjects, str(subjects))
     check("the 2 old marks are hidden, not deleted", cal.locator(".lecture.present").count() == 0)
     cal.close()
     pg.click("#attendUndo"); pg.wait_for_timeout(500)
     cal = new_page(ctx, errs)
-    cal.goto(BASE + "/campus/"); cal.fill("#username", "Z"); cal.click("text=Enter")
+    cal.goto(BASE + "/campus/"); cal.fill("#username", "Z"); cal.click("text=Enter"); prev_month(cal)
     check("Undo brings the old timetable and the 2 marks back", cal.locator(".lecture.present").count() == 2 and "Hindi" in cal.inner_text("#calendarGrid"))
     pg.select_option("#course", ""); pg.set_input_files("#file", os.path.join(S, "timetable_teacher_room.png")); wait_done(pg)
     check("low-confidence lectures: confirm disabled until 'I checked them' is ticked", pg.locator("#attendOk").count() == 1 and not pg.is_enabled("#attendConfirm"))
@@ -372,7 +429,7 @@ def main():
     api("/api/entries", "DELETE")
     with sync_playwright() as p:
         b = p.chromium.launch()
-        for test in (test_api, test_demo_flow, test_announcements, test_catalog, test_attendance_bridge, test_chat, test_chat_prefill):
+        for test in (test_api, test_demo_flow, test_announcements, test_catalog, test_attendance, test_attendance_bridge, test_chat, test_chat_prefill):
             print(f"\n== {test.__name__}")
             try:
                 test(b)
