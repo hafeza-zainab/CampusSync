@@ -18,9 +18,20 @@ import urllib.request
 
 from playwright.sync_api import sync_playwright
 
-BASE = "http://localhost:8000"
+BASE = os.environ.get("CAMPUS_BASE", "http://localhost:8000")     # point it at another server to test a different checkout
 # Demo accounts: PLACEHOLDER college IDs (see store.js), not real people
 ID = {"Zainab": "DEMO-CS-001", "Aarav": "DEMO-CS-002", "Meera": "DEMO-CS-003", "Kabir": "DEMO-CS-004"}
+# Only used if the login form has a password field (demo accounts: see DEMO_USERS in store.js)
+PASSWORD = {"DEMO-CS-001": "cr-demo", "DEMO-CS-002": "acr-demo", "DEMO-CS-003": "student-demo", "DEMO-CS-004": "student-demo"}
+
+
+def login_as(pg, who):
+    """Fill the login form for a demo account and press Enter. `who` is a first name from ID or an ID."""
+    uid = ID.get(who, who)
+    pg.fill("#username", uid)
+    if pg.locator("#password").count():
+        pg.fill("#password", PASSWORD.get(uid, ""))
+    pg.click("text=Enter")
 S = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "samples")
 results = []
 
@@ -126,7 +137,7 @@ def test_announcements(b):
     errs = []
     ctx = b.new_context(viewport={"width": 1400, "height": 1100})
     login_page = new_page(ctx, errs)
-    login_page.goto(BASE + "/campus/"); login_page.fill("#username", ID["Zainab"]); login_page.click("text=Enter")   # Vision reads who is logged in
+    login_page.goto(BASE + "/campus/"); login_as(login_page, "Zainab")   # Vision reads who is logged in
     pg = new_page(ctx, errs)
     pg.goto(BASE + "/"); pg.click("#clear")
 
@@ -156,7 +167,7 @@ def test_announcements(b):
           pg.inner_text("#postMsg"))
     # does the existing attendance app show them?
     app = new_page(ctx, errs)
-    app.goto(BASE + "/campus/"); app.fill("#username", ID["Zainab"]); app.click("text=Enter"); app.click("text=📢 Announcements")
+    app.goto(BASE + "/campus/"); login_as(app, "Zainab"); app.click("text=📢 Announcements")
     text = app.inner_text("#announceList")
     check("announcements appear in the attendance app, authored by the logged-in college ID, marked 'via Vision'",
           text.count("— DEMO-CS-001 (STUDENT) · via Vision") == 8, f"{text.count('· via Vision')} found")
@@ -219,9 +230,9 @@ def test_login(b):
     # log out, log in as someone else: their attendance is empty; mine is back when I return
     pg.click("text=Logout"); pg.wait_for_selector("#loginBox", state="visible")
     check("logout: returns to the login screen", pg.locator("#loginBox").is_visible() and not pg.locator("#dashboard").is_visible())
-    pg.fill("#username", ID["Aarav"]); pg.click("text=Enter"); prev_month(pg)
+    login_as(pg, "Aarav"); prev_month(pg)
     check("a different ID sees none of the first ID's attendance", pg.locator(".lecture.present").count() == 0)
-    pg.click("text=Logout"); pg.fill("#username", ID["Zainab"]); pg.click("text=Enter"); prev_month(pg)
+    pg.click("text=Logout"); login_as(pg, "Zainab"); prev_month(pg)
     check("the first ID gets its attendance back", pg.locator(".lecture.present").count() == 1)
     check("login: no alert()/prompt() popups and no page errors", not dialogs and not errs, str(dialogs + errs))
     ctx.close()
@@ -240,7 +251,7 @@ def test_import(b):
     ctx = b.new_context(viewport={"width": 1500, "height": 1000})
     app = new_page(ctx, errs)
     app.on("dialog", lambda d: (dialogs.append(d.type), d.accept()))
-    app.goto(BASE + "/campus/"); app.fill("#username", ID["Zainab"]); app.click("text=Enter")
+    app.goto(BASE + "/campus/"); login_as(app, "Zainab")
     api("/api/entries", "DELETE")
     nav = app.locator(".tab-nav button", has_text="Import from screenshot")
     check("import: the app nav has an 'Import from screenshot' entry", nav.count() == 1)
@@ -303,7 +314,7 @@ def test_study(b):
     ctx = b.new_context(viewport={"width": 1500, "height": 1000})
     app = new_page(ctx, errs)
     app.on("dialog", lambda d: (dialogs.append(d.type), d.accept()))
-    app.goto(BASE + "/campus/"); app.fill("#username", ID["Zainab"]); app.click("text=Enter")
+    app.goto(BASE + "/campus/"); login_as(app, "Zainab")
     api("/api/entries", "DELETE")
     app.click(".tab-nav button >> text=Study Panel")
     check("study: the tab has Semester, Subject, Topic, Date and File inputs",
@@ -363,7 +374,7 @@ def test_study(b):
     # remove + ownership
     foreign = {"id": "other1", "source": "upload", "semester": "sem1", "subject": "Hindi", "topic": "Someone else's notes", "date": "2026-10-01", "addedBy": "DEMO-CS-002", "addedAt": 1}
     app.evaluate("(f) => { const k = 'campussync.study'; const a = JSON.parse(localStorage.getItem(k)); a.push(f); localStorage.setItem(k, JSON.stringify(a)); }", foreign)
-    app.reload(); app.fill("#username", ID["Zainab"]); app.click("text=Enter"); app.click(".tab-nav button >> text=Study Panel")
+    app.reload(); login_as(app, "Zainab"); app.click(".tab-nav button >> text=Study Panel")
     check("study: items survive a reload", app.locator(".study-card").count() == 16, f"{app.locator('.study-card').count()} cards")
     other = app.locator(".study-card", has_text="Someone else's notes")
     check("study: you can remove your own items but not someone else's", other.locator(".study-remove").count() == 0 and app.locator(".study-card", has_text="Loops").locator(".study-remove").count() == 1)
@@ -386,7 +397,7 @@ def test_attendance(b):
     pg = ctx.new_page()
     pg.on("pageerror", lambda e: errs.append(str(e)[:100]))
     pg.on("dialog", lambda d: (dialogs.append(d.type), d.accept()))
-    pg.goto(BASE + "/campus/"); pg.fill("#username", ID["Zainab"]); pg.click("text=Enter")
+    pg.goto(BASE + "/campus/"); login_as(pg, "Zainab")
     now = datetime.date.today()
     check("attendance: opens on the current month", pg.inner_text("#monthYear") == now.strftime("%B %Y"), pg.inner_text("#monthYear"))
     prev_month(pg)
@@ -428,7 +439,7 @@ def test_attendance_bridge(b):
     errs = []
     ctx = b.new_context(viewport={"width": 1500, "height": 1000})
     app = new_page(ctx, errs)
-    app.goto(BASE + "/campus/"); app.fill("#username", ID["Zainab"]); app.click("text=Enter")
+    app.goto(BASE + "/campus/"); login_as(app, "Zainab")
     first = app.inner_text("#monthYear"); app.click("text=▶"); second = app.inner_text("#monthYear"); app.click("text=◀")
     check("attendance app: month buttons work", first != second and app.inner_text("#monthYear") == first)
     prev_month(app)
@@ -436,7 +447,7 @@ def test_attendance_bridge(b):
     marks = app.evaluate("localStorage.getItem('campussync.attendance.DEMO-CS-001')")
     check("attendance app: lectures can be marked (time format fixed) and are saved", marks and marks.count("present") == 2, marks)
     check("attendance app: stats panel shows percentages", "%" in app.inner_text("#stats"))
-    app.reload(); app.fill("#username", ID["Zainab"]); app.click("text=Enter"); prev_month(app)
+    app.reload(); login_as(app, "Zainab"); prev_month(app)
     check("attendance app: marks survive a reload", app.locator(".lecture.present").count() == 2)
     app.click("text=📢 Announcements"); app.fill("#msg", "hello"); app.click("button:text('Post')")
     check("attendance app: an announcement shows the author's college ID and role, not 'undefined'", "hello — DEMO-CS-001 (STUDENT)" in app.inner_text("#announceList"), app.inner_text("#announceList"))
@@ -453,14 +464,14 @@ def test_attendance_bridge(b):
     pg.click("#attendConfirm"); pg.wait_for_timeout(300)
     check("attendance data is untouched by the replace", pg.evaluate("localStorage.getItem('campussync.attendance.DEMO-CS-001')") == marks)
     cal = new_page(ctx, errs)
-    cal.goto(BASE + "/campus/"); cal.fill("#username", ID["Zainab"]); cal.click("text=Enter"); prev_month(cal)
+    cal.goto(BASE + "/campus/"); login_as(cal, "Zainab"); prev_month(cal)
     subjects = cal.eval_on_selector_all(".lecture", "e => [...new Set(e.map(x => x.textContent.replace(/^[0-9:-]+ /, '')))]")
     check("attendance app now shows the new subjects", "Placeholder Algebra" in subjects and "Hindi" not in subjects, str(subjects))
     check("the 2 old marks are hidden, not deleted", cal.locator(".lecture.present").count() == 0)
     cal.close()
     pg.click("#attendUndo"); pg.wait_for_timeout(500)
     cal = new_page(ctx, errs)
-    cal.goto(BASE + "/campus/"); cal.fill("#username", ID["Zainab"]); cal.click("text=Enter"); prev_month(cal)
+    cal.goto(BASE + "/campus/"); login_as(cal, "Zainab"); prev_month(cal)
     check("Undo brings the old timetable and the 2 marks back", cal.locator(".lecture.present").count() == 2 and "Hindi" in cal.inner_text("#calendarGrid"))
     pg.select_option("#course", ""); pg.set_input_files("#file", os.path.join(S, "timetable_teacher_room.png")); wait_done(pg)
     check("low-confidence lectures: confirm disabled until 'I checked them' is ticked", pg.locator("#attendOk").count() == 1 and not pg.is_enabled("#attendConfirm"))
@@ -480,93 +491,106 @@ def chat_open(ctx, user, errors, dialogs):
     pg = ctx.new_page()
     pg.on("pageerror", lambda e: errors.append(str(e)[:100]))
     pg.on("dialog", lambda d: (dialogs.append(d.message), d.accept()))
-    pg.goto(BASE + "/campus/"); pg.fill("#username", ID[user]); pg.click("text=Enter")
+    pg.goto(BASE + "/campus/"); login_as(pg, user)
     pg.click(".tab-nav button >> text=Chat")
     return pg
 
 
+def chat_send(pg, type_name, subject, topic):
+    """Send a template message: click its button, fill the three fields, press the form's submit button."""
+    pg.click(f"#chat-new-{type_name}")
+    pg.select_option("#chat-req-subject", subject)
+    pg.fill("#chat-req-topic", topic)
+    pg.click("dialog.chat-dialog button[type=submit]")
+
+
 def test_chat(b):
+    """Step E (option B): every chat message is a template (Subject / Date / Topic). No free-text box anywhere."""
     errs, dialogs = [], []
     ctx = b.new_context(viewport={"width": 1366, "height": 768})
     z = chat_open(ctx, "Zainab", errs, dialogs)
     check("chat: old stub is gone (no handleResponse / Public-Private buttons)", "handleResponse" not in urllib.request.urlopen(BASE + "/campus/chatbot.html").read().decode())
-    check("chat: the tab starts hidden-until-clicked and is built by chat.js", z.locator("#chat").is_visible() and z.locator(".tab-nav button", has_text="Chat").count() == 1)
-    check("chat: seeded on first load (4 group messages + 1 open request, day separators)",
-          z.locator(".chat-msg").count() == 5 and z.locator(".chat-request .chat-status.open").count() == 1 and z.locator(".chat-day").count() == 2)
+    check("chat: the tab is built by chat.js and opens from the nav", z.locator("#chat").is_visible() and z.locator(".tab-nav button", has_text="Chat").count() == 1)
+    check("chat: seeded with a notes-shared card, an open request and an open doubt in the group, with day separators",
+          z.locator(".chat-msg").count() == 3 and z.locator(".chat-req-title", has_text="Notes shared").count() == 1
+          and z.locator(".chat-req-title", has_text="Note request").count() == 1 and z.locator(".chat-req-title", has_text="Doubt").count() == 1 and z.locator(".chat-day").count() >= 1)
     check("chat: demo-accounts notice is shown", "placeholder college IDs" in z.inner_text(".chat-demo") and "no server sync" in z.inner_text(".chat-demo"))
     check("chat: conversation list = group + 3 classmates", z.eval_on_selector_all(".chat-convo-title", "e => e.map(x => x.textContent)") == ["Class group", "Aarav", "Meera", "Kabir"])
-    check("chat: unread count shown on the Meera one-to-one", chat_conv(z, "Meera").locator(".chat-badge").inner_text() == "2")
+    check("chat: unread count shown on the Meera one-to-one", chat_conv(z, "Meera").locator(".chat-badge").inner_text() == "1")
 
-    # composer
-    z.fill("#chat-input", "Hello <b>bold</b> <img src=x onerror=window.__pwned=1>"); z.press("#chat-input", "Enter")
-    last = z.locator(".chat-msg").last
-    check("composer: Enter sends; typed HTML is shown as plain text (no <b>/<img> created)",
-          "<b>bold</b>" in last.inner_text() and z.locator("#chat b, #chat img").count() == 0 and z.evaluate("window.__pwned") is None)
-    z.fill("#chat-input", "a"); z.press("#chat-input", "Shift+Enter"); z.type("#chat-input", "b")
-    n = z.locator(".chat-msg").count()
-    check("composer: Shift+Enter adds a line instead of sending", z.input_value("#chat-input") == "a\nb" and z.locator(".chat-msg").count() == n)
-    z.press("#chat-input", "Enter")
-    check("composer: multi-line message is kept", z.locator(".chat-text").last.inner_text() == "a\nb")
-    z.fill("#chat-input", "    "); z.press("#chat-input", "Enter")
-    check("composer: whitespace-only is ignored", z.locator(".chat-msg").count() == n + 1)
-    check("messages: newest message is scrolled into view",
-          z.evaluate("(() => { const m = document.querySelector('.chat-messages'); return m.scrollHeight - m.scrollTop - m.clientHeight < 5; })()"))
+    # no free text anywhere
+    check("no free text: there is no text box or textarea in the chat", z.locator("#chat textarea").count() == 0 and z.locator("#chat input[type=text], #chat input:not([type])").count() == 0)
+    check("no free text: three template buttons are the only way to send",
+          z.eval_on_selector_all(".chat-actions button", "e => e.map(x => x.textContent)") == ["📝 Request notes", "📤 Notes shared", "❓ Ask a doubt"])
+    for type_name, heading in (("request", "Request notes"), ("shared", "Notes shared"), ("doubt", "Ask a doubt")):
+        z.click(f"#chat-new-{type_name}")
+        fields = z.locator("dialog.chat-dialog").locator("select, input, textarea").evaluate_all("e => e.map(x => x.tagName + ':' + x.type)")
+        check(f"template '{heading}': exactly three inputs (Subject, Date, Topic)", fields == ["SELECT:select-one", "INPUT:date", "INPUT:text"] and z.inner_text("dialog.chat-dialog h4") == heading, str(fields))
+        z.keyboard.press("Escape")
+    z.click("#chat-new-request")
+    check("template: subjects come from the timetable and the date defaults to today",
+          z.eval_on_selector_all("#chat-req-subject option", "e => e.map(x => x.textContent)")[1:3] == ["Hindi", "OOP C++"] and z.input_value("#chat-req-date") == datetime.date.today().isoformat())
+    z.click("dialog.chat-dialog button[type=submit]")
+    check("template: submitting empty shows an inline error, no popup", z.inner_text(".chat-req-error") == "Choose a subject.")
+    z.select_option("#chat-req-subject", "Python"); z.click("dialog.chat-dialog button[type=submit]")
+    check("template: the topic is required", z.inner_text(".chat-req-error") == "Write a short topic.")
+    z.keyboard.press("Escape")
+
+    # note request
+    chat_send(z, "request", "Python", "   <b>File</b>   handling  ")
+    card = z.locator(".chat-request").last
+    check("request: posts a card with Subject / Date / Topic (HTML shown as text, spaces cleaned)",
+          "Python" in card.inner_text() and "<b>File</b> handling" in card.inner_text() and card.locator("b").count() == 0 and z.locator("#chat b, #chat img").count() == 0)
+    check("request: starts Open and the sender has no answer button", card.locator(".chat-status").inner_text() == "Open" and card.locator("button").count() == 0)
+    z.click("#chat-new-request"); z.keyboard.press("Escape")
+    check("template form: Esc closes it and focus returns to the button that opened it", not z.locator("dialog.chat-dialog").is_visible() and "Request notes" in z.evaluate("document.activeElement.textContent"))
+
+    # second tab: another account answers
+    a = chat_open(ctx, "Aarav", errs, dialogs)
+    a.wait_for_function("document.querySelectorAll('.chat-request').length === 4", timeout=5000)
+    acard = a.locator(".chat-request").last
+    check("request: another account sees it Open with 'I have these notes'", acard.locator(".chat-status").inner_text() == "Open" and acard.locator("button").inner_text() == "I have these notes")
+    acard.locator("button").click()
+    check("request: pressing it marks it Shared with who and when", acard.locator(".chat-status").inner_text() == "Shared" and "by Aarav (DEMO-CS-002) at" in acard.locator(".chat-req-by").inner_text())
+    z.wait_for_function("(() => { const c = document.querySelectorAll('.chat-request'); return c[c.length-1].querySelector('.chat-status').textContent === 'Shared'; })()", timeout=5000)
+    zc = z.locator(".chat-request").last
+    check("request: the sender's tab shows Shared live, with who and when", "by Aarav (DEMO-CS-002) at" in zc.locator(".chat-req-by").inner_text() and zc.locator("button").count() == 0)
+
+    # notes shared + doubt
+    chat_send(z, "shared", "DAA", "Dynamic programming notes")
+    shared = z.locator(".chat-request").last
+    check("notes shared: posts a card with no status flow and no button", "Notes shared" in shared.inner_text() and "Dynamic programming notes" in shared.inner_text() and shared.locator("button").count() == 0)
+    chat_send(z, "doubt", "OOP C++", "Virtual functions")
+    a.wait_for_function("document.querySelectorAll('.chat-request').length === 6", timeout=5000)
+    check("sync: messages sent in one tab appear live in the other tab", "Virtual functions" in a.locator(".chat-request").last.inner_text() and "Dynamic programming notes" in a.inner_text(".chat-messages"))
+    dcard = a.locator(".chat-request").last
+    check("doubt: another account sees it Open with 'I can help'", dcard.locator(".chat-status").inner_text() == "Open" and dcard.locator("button").inner_text() == "I can help")
+    dcard.locator("button").click()
+    check("doubt: pressing it marks it Answered with who and when", dcard.locator(".chat-status").inner_text() == "Answered" and "by Aarav (DEMO-CS-002) at" in dcard.locator(".chat-req-by").inner_text())
+    k = chat_open(ctx, "Kabir", errs, dialogs)
+    check("request: a third account sees the answered cards with no button", k.locator(".chat-request").last.locator("button").count() == 0 and k.locator(".chat-request").last.locator(".chat-status").inner_text() == "Answered")
 
     # one-to-one
     chat_conv(z, "Meera").click()
-    check("one-to-one: opening it shows its messages and clears its unread badge", z.locator(".chat-msg").count() == 3 and chat_conv(z, "Meera").locator(".chat-badge").count() == 0)
-    z.fill("#chat-input", "Calling at 8!"); z.press("#chat-input", "Enter")
+    check("one-to-one: opening it shows its 2 messages and clears its unread badge", z.locator(".chat-msg").count() == 2 and chat_conv(z, "Meera").locator(".chat-badge").count() == 0)
+    check("one-to-one: it has the same templates and says where a message will go", z.locator(".chat-actions button").count() == 3 and "template messages only" in z.inner_text(".chat-subtitle"))
+    z.click("#chat-new-doubt"); to_dm = z.inner_text(".chat-req-target"); z.keyboard.press("Escape")
+    check("one-to-one: the form says 'Sending to: Meera'", to_dm == "Sending to: Meera")
+    chat_send(z, "request", "EVS", "Water pollution")
+    check("one-to-one: a template sent here lands in this conversation", z.locator(".chat-msg").count() == 3 and "Water pollution" in z.inner_text(".chat-messages"))
     chat_conv(z, "Class group").click()
-    check("one-to-one: a direct message does not appear in the class group", "Calling at 8!" not in z.inner_text(".chat-messages"))
-
-    # a second tab as another user, live sync, privacy
-    a = chat_open(ctx, "Aarav", errs, dialogs)
-    check("one-to-one: Aarav cannot see the Zainab/Meera conversation", a.eval_on_selector_all(".chat-convo-title", "e => e.map(x => x.textContent)") == ["Class group", "Zainab", "Meera", "Kabir"] and "Calling at 8!" not in a.inner_text("#chat"))
-    z.fill("#chat-input", "live sync test"); z.press("#chat-input", "Enter")
-    a.wait_for_function("document.querySelector('.chat-messages').innerText.includes('live sync test')", timeout=5000)
-    check("sync: a message sent in one tab appears live in the other tab", True)
-
-    # note request form
-    z.click("text=Request notes")
-    dlg = z.locator("dialog.chat-dialog")
-    fields = dlg.locator("select, input, textarea").evaluate_all("e => e.map(x => x.tagName + ':' + x.type)")
-    check("request form: exactly three inputs (Subject, Date, Topic)", fields == ["SELECT:select-one", "INPUT:date", "INPUT:text"], str(fields))
-    check("request form: subjects come from the timetable", z.eval_on_selector_all("#chat-req-subject option", "e => e.map(x => x.textContent)")[1:3] == ["Hindi", "OOP C++"])
-    check("request form: date defaults to today", z.input_value("#chat-req-date") == datetime.date.today().isoformat())
-    z.click("text=Send request")
-    check("request form: submitting empty shows an inline error, no popup", z.inner_text(".chat-req-error") == "Choose a subject." and dlg.is_visible())
-    z.select_option("#chat-req-subject", "Python"); z.click("text=Send request")
-    check("request form: topic is required", z.inner_text(".chat-req-error") == "Write a short topic.")
-    z.fill("#chat-req-topic", "   <b>File</b>   handling  "); z.click("text=Send request")
-    card = z.locator(".chat-request").last
-    check("request: posts a card with Subject / Date / Topic (HTML shown as text, spaces cleaned)",
-          not dlg.is_visible() and "Python" in card.inner_text() and "<b>File</b> handling" in card.inner_text() and card.locator("b").count() == 0)
-    check("request: starts Open and the requester has no 'I have these notes' button", card.locator(".chat-status").inner_text() == "Open" and card.locator("button").count() == 0)
-    z.click("text=Request notes"); z.keyboard.press("Escape")
-    check("request form: Esc closes it and focus returns to the Request button", not dlg.is_visible() and "Request notes" in z.evaluate("document.activeElement.textContent"))
-
-    acard = a.locator(".chat-request").last
-    a.wait_for_function("document.querySelectorAll('.chat-request').length === 2", timeout=5000)
-    check("request: another user sees it Open with an 'I have these notes' button", acard.locator(".chat-status").inner_text() == "Open" and acard.locator("button").count() == 1)
-    acard.locator("button").click()
-    check("request: pressing it marks it Shared with name and time", acard.locator(".chat-status").inner_text() == "Shared" and "by Aarav (DEMO-CS-002) at" in acard.locator(".chat-req-by").inner_text())
-    z.wait_for_function("(() => { const c = document.querySelectorAll('.chat-request'); return c[c.length-1].querySelector('.chat-status').textContent === 'Shared'; })()", timeout=5000)
-    zc = z.locator(".chat-request").last
-    check("request: the requester's tab shows Shared live, with who and when", "by Aarav (DEMO-CS-002) at" in zc.locator(".chat-req-by").inner_text() and zc.locator("button").count() == 0)
-    k = chat_open(ctx, "Kabir", errs, dialogs)
-    check("request: a third user sees Shared and no button", k.locator(".chat-request").last.locator(".chat-status").inner_text() == "Shared" and k.locator(".chat-request").last.locator("button").count() == 0)
-    chat_conv(z, "Meera").click(); z.click("text=Request notes")
-    check("request: inside a one-to-one it says where it will be sent", z.inner_text(".chat-req-target") == "Sending to: Meera")
-    z.select_option("#chat-req-subject", "EVS"); z.fill("#chat-req-topic", "Water pollution"); z.click("text=Send request")
-    check("request: lands in that one-to-one, not in the group", z.locator(".chat-request").count() == 1)
+    check("one-to-one: it does not appear in the class group", "Water pollution" not in z.inner_text(".chat-messages"))
+    m = chat_open(ctx, "Meera", errs, dialogs)
+    check("one-to-one: Meera sees it with an unread badge for Zainab; Aarav cannot see this conversation",
+          chat_conv(m, "Zainab").locator(".chat-badge").count() == 1 and "Water pollution" not in a.inner_text("#chat") and "Water pollution" not in k.inner_text("#chat"))
 
     # persistence + reset
-    z.reload(); z.fill("#username", ID["Zainab"]); z.click("text=Enter"); z.click(".tab-nav button >> text=Chat")
-    check("persistence: messages survive a reload", "live sync test" in z.inner_text(".chat-messages"))
+    z.reload(); login_as(z, "Zainab"); z.click(".tab-nav button >> text=Chat")
+    check("persistence: messages survive a reload", "Dynamic programming notes" in z.inner_text(".chat-messages"))
     z.click("text=Reset chat")
-    check("reset: first click only asks to confirm (no popup)", z.locator("text=Click again to reset").count() == 1 and "live sync test" in z.inner_text(".chat-messages"))
+    check("reset: first click only asks to confirm (no popup)", z.locator("text=Click again to reset").count() == 1 and "Dynamic programming notes" in z.inner_text(".chat-messages"))
     z.click("text=Click again to reset")
-    check("reset: second click restores the seed data", z.locator(".chat-msg").count() == 5 and "live sync test" not in z.inner_text(".chat-messages"))
+    check("reset: second click restores the seed data", z.locator(".chat-msg").count() == 3 and "Dynamic programming notes" not in z.inner_text(".chat-messages"))
 
     # quality bar at both screen sizes
     for w, h in ((1920, 1080), (1366, 768)):
@@ -576,11 +600,11 @@ def test_chat(b):
         small = z.evaluate("""() => [...document.querySelectorAll('#chat *')].filter(e => e.childNodes.length && [...e.childNodes].some(n => n.nodeType === 3 && n.textContent.trim()) && e.offsetParent !== null)
                                  .map(e => parseFloat(getComputedStyle(e).fontSize)).filter(s => s < 13).length""")
         check(f"layout {w}x{h}: no visible chat text smaller than 13px", small == 0, f"{small} elements")
-        check(f"layout {w}x{h}: the composer is inside the visible area",
-              z.evaluate("window.scrollTo(0, 0) || document.querySelector('.chat-composer').getBoundingClientRect().bottom <= window.innerHeight"))
-    z.focus("#chat-input"); z.keyboard.press("Tab")
+        check(f"layout {w}x{h}: the template buttons are inside the visible area",
+              z.evaluate("window.scrollTo(0, 0) || document.querySelector('.chat-actions').getBoundingClientRect().bottom <= window.innerHeight"))
+    z.focus("#chat-new-request"); z.keyboard.press("Tab")
     outline = z.evaluate("getComputedStyle(document.activeElement).outlineWidth + ' ' + getComputedStyle(document.activeElement).outlineStyle")
-    check("keyboard: Tab from the message box reaches Send with a visible focus outline", "Send" in z.evaluate("document.activeElement.textContent") and outline.startswith("3px") and "solid" in outline, outline)
+    check("keyboard: Tab moves between the template buttons with a visible focus outline", "Notes shared" in z.evaluate("document.activeElement.textContent") and outline.startswith("3px") and "solid" in outline, outline)
     check("chat: no alert()/confirm()/prompt() popups were shown during the whole chat test", dialogs == [], str(dialogs))
     check("chat: no page errors", not errs, str(errs))
     ctx.close()
@@ -610,15 +634,15 @@ def test_chat_prefill(b):
     c.on("dialog", lambda d: (dialogs.append(d.message), d.accept()))
     c.wait_for_load_state()
     check("prefill: the campus app still shows its login first", c.locator("#loginBox").is_visible())
-    c.fill("#username", ID["Zainab"]); c.click("text=Enter")
+    login_as(c, "Zainab")
     dlg = c.locator("dialog.chat-dialog")
     check("prefill: after login the Chat tab opens with the request form", c.locator("#chat").is_visible() and dlg.is_visible())
     check("prefill: subject and topic are filled from the lecture", c.input_value("#chat-req-subject") == "Hindi" and c.input_value("#chat-req-topic") == "Monday 07-08 lecture")
     date = datetime.date.fromisoformat(c.input_value("#chat-req-date"))
     check("prefill: the date is the most recent Monday (on or before today)", date.weekday() == 0 and date <= datetime.date.today() and (datetime.date.today() - date).days < 7, str(date))
-    check("prefill: nothing was sent automatically", c.locator(".chat-request").count() == 1)       # the single seeded request
-    c.click("text=Send request")
-    check("prefill: it is sent only after the user presses Send", c.locator(".chat-request").count() == 2)
+    check("prefill: nothing was sent automatically", c.locator(".chat-request").count() == 3)       # the 3 seeded cards
+    c.click("dialog.chat-dialog button[type=submit]")
+    check("prefill: it is sent only after the user presses Send", c.locator(".chat-request").count() == 4)
     check("prefill: the URL is cleaned so a reload does not reopen the form", "chat=request" not in c.url)
     check("prefill: no page errors or popups", not errs and not dialogs, str(errs + dialogs))
     ctx.close()

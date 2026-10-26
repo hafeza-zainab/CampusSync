@@ -1,30 +1,46 @@
 // CampusSync Chat tab (front-end only).
 //
-// WHAT THIS IS: a demo chat inside the attendance app. The "users" are DEMO users picked from the
-// "Chatting as" box, all in ONE browser. Messages are kept in localStorage (key "chat" in store.js),
-// and two tabs of the same browser stay in sync through the browser's "storage" event.
-// There is no server and no accounts, so this is NOT real multi-user chat.
+// WHAT THIS IS: a demo chat inside the attendance app, with a class group and one-to-one chats.
+// There is NO free-text box. Every message is sent from a template with exactly three fields,
+// Subject, Date and Topic, so the chat stays on topic. The templates are:
+//     Request notes    -> a request card that someone else can answer with "I have these notes"
+//     Notes shared     -> a card telling the class which notes you are sharing
+//     Ask a doubt      -> a doubt card that someone else can answer with "I can help"
 //
-// HOW IT HOOKS IN: index.html loads this file with one <script> line. This file then builds its own nav
-// button, its own tab section and its own stylesheet link, and wraps showTab()/login() from app.js,
-// so app.js, style.css and data.js are not edited.
+// WHO IS CHATTING: the logged-in college ID (see store.js). The demo accounts have placeholder IDs.
+// A "Demo only" switch lets one browser act as another demo account, for the two-tab demo.
 //
-// Message text is always put on the page with textContent (never innerHTML), so typed HTML is shown as
-// plain text and cannot break the page.
+// HONEST LIMITS: messages live in localStorage (key "chat" in store.js) and two tabs of the SAME
+// browser stay in sync through the "storage" event. There is no server, so this is NOT real-time
+// chat between different computers or browsers.
+//
+// HOW IT HOOKS IN: index.html loads this file with one <script> line. This file builds its own nav
+// button, tab section and stylesheet link, and wraps showTab()/login() from app.js, so app.js,
+// style.css and data.js are not edited. All text goes onto the page with textContent (never innerHTML).
 (function () {
   "use strict";
 
-  // The chat identity is the logged-in college ID (see store.js). The demo accounts have placeholder IDs.
-  const USERS = DEMO_USERS.map(u => u.id);
+  const USERS = DEMO_USERS.map(u => u.id);   // the demo accounts (placeholder college IDs)
   const COLORS = { "DEMO-CS-001": "#5b4bc4", "DEMO-CS-002": "#1f7a4a", "DEMO-CS-003": "#b8400c", "DEMO-CS-004": "#0e6f86" };
   const ME_KEY = "campussync.chat.demoswitch";   // sessionStorage: DEMO-ONLY override of who this tab chats as
-  const nameOf = id => demoName(id) || id;       // "Aarav" for a demo ID, otherwise the ID itself
-  const MAX_TEXT = 1000;
-  const MAX_TOPIC = 80;   // a note request's topic is a short text
+  const MAX_TOPIC = 80;                          // the topic is a short text
+  const DATA_VERSION = 3;                        // 3 = template-only messages (older saved chats are replaced by fresh demo data)
 
-  let data = null;       // { messages: [...], reads: { user: { conversation: lastReadTime } } }
-  let me = USERS[0];     // who this tab chats as: the logged-in college ID (or the demo switch)
+  // The three templates. Each card has the same three fields; they differ in the status flow.
+  //   states: the words shown for each status;  done: the status after someone answers;  action: the answer button
+  const KINDS = {
+    request: { icon: "📝", title: "Note request", open: "Request notes", send: "Send request", placeholder: "e.g. Chapter 3, second half",
+               states: { open: "Open", shared: "Shared" }, done: "shared", action: "I have these notes" },
+    shared:  { icon: "📤", title: "Notes shared", open: "Notes shared", send: "Post to chat", placeholder: "What are the notes about?",
+               states: { posted: "Shared" } },
+    doubt:   { icon: "❓", title: "Doubt", open: "Ask a doubt", send: "Post doubt", placeholder: "What are you stuck on?",
+               states: { open: "Open", answered: "Answered" }, done: "answered", action: "I can help" },
+  };
+
+  let data = null;       // { version, messages: [...], reads: { id: { conversation: lastReadTime } } }
+  let me = USERS[0];     // who this tab chats as
   let convo = "class";   // id of the open conversation
+  let kind = "request";  // which template the form is open for
   const ui = {};         // DOM elements we need to find again
 
   // ---------------------------------------------------------------- small helpers
@@ -41,7 +57,9 @@
     return node;
   }
 
-  function currentIdentity() {
+  const nameOf = id => demoName(id) || id;       // "Aarav" for a demo ID, otherwise the ID itself
+
+  function currentIdentity() {                   // the login ID, unless the demo switch is used in this tab
     let override = "";
     try { override = sessionStorage.getItem(ME_KEY) || ""; } catch (e) { /* private mode */ }
     if (USERS.includes(override)) return override;
@@ -62,7 +80,7 @@
     return new Date(ts).toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" });
   }
 
-  // The subjects you can request notes for: the ones in the timetable the app is using right now
+  // The subjects you can pick: the ones in the timetable the app is using right now
   // (data.js, or the one Vision saved). "timetable" is the global from data.js / app.js.
   function subjectList() {
     const subjects = [];
@@ -80,40 +98,36 @@
   const cleanTopic = v => String(v || "").replace(/\s+/g, " ").trim().slice(0, MAX_TOPIC);
   const prettyDate = v => new Date(v + "T12:00:00").toLocaleDateString([], { weekday: "short", day: "numeric", month: "short", year: "numeric" });
 
-  // A request must be exactly {subject, date, topic, status, ...} with plain strings; anything else is not drawn.
-  const isRequest = m => m.type === "request" && m.request && ["subject", "date", "topic", "status"].every(k => typeof m.request[k] === "string");
-  const previewOf = m => m.type === "request" ? "📝 Note request: " + (m.request ? m.request.subject : "") : m.text;
+  // A message must be a known template with plain-string subject/date/topic/status; anything else is not drawn.
+  const isCard = m => m && KINDS[m.type] && m.card && ["subject", "date", "topic", "status"].every(k => typeof m.card[k] === "string");
+  const previewOf = m => `${KINDS[m.type].icon} ${KINDS[m.type].title}: ${m.card.subject}`;
 
   // ---------------------------------------------------------------- storage (uses store.js)
   function seedData() {
     const now = Date.now(), H = 3600 * 1000, D = 24 * H;
     const U = name => DEMO_USERS.find(u => u.name === name).id;      // "Meera" -> "DEMO-CS-003"
-    const msg = (from, ago, text, c = "class") => ({ id: uid(), convo: c, from: U(from), ts: now - ago, type: "text", text });
-    const zm = dmId(U("Zainab"), U("Meera")), ak = dmId(U("Aarav"), U("Kabir"));
     const subjects = subjectList();
-    const request = {   // one open note request from Meera, so the tab is not empty on first load
-      id: uid(), convo: "class", from: U("Meera"), ts: now - 1.5 * H, type: "request",
-      request: { subject: subjects.includes("DAA") ? "DAA" : (subjects[0] || "Subject"), date: localDate(new Date(now - D)),
-                 topic: "Second half of the lecture", status: "open" },
-    };
+    const pick = (name, i) => subjects.includes(name) ? name : (subjects[i % Math.max(subjects.length, 1)] || "Subject");
+    const card = (type, who, ago, c, subject, daysAgo, topic, status) => ({
+      id: uid(), convo: c, from: U(who), ts: now - ago, type,
+      card: { subject: pick(subject, 0), date: localDate(new Date(now - daysAgo * D)), topic, status },
+    });
+    const zm = dmId(U("Zainab"), U("Meera")), ak = dmId(U("Aarav"), U("Kabir"));
     return {
-      version: 2,   // 2 = senders are college IDs (version 1 used first names and is replaced by fresh demo data)
+      version: DATA_VERSION,
       messages: [
-        msg("Aarav", D + 3 * H, "Hi all! Is the DAA assignment still due this Friday?"),
-        msg("Meera", D + 2.5 * H, "Yes, Friday. I'll post my notes once I've cleaned them up."),
-        msg("Kabir", 3 * H, "Reminder: the Python lab starts at 10 tomorrow."),
-        request,
-        msg("Zainab", 2 * H, "Thanks Kabir! I'll bring my laptop."),
-        msg("Meera", 5 * H, "Are you free to go over the DAA assignment tonight?", zm),
-        msg("Zainab", 4.5 * H, "Sure, 8pm works for me.", zm),
-        msg("Meera", 0.7 * H, "Great, I'll call you then.", zm),
-        msg("Kabir", 2 * H, "Did you finish the OS lab questions?", ak),
+        card("shared", "Aarav", D + 3 * H, "class", "Python", 1, "File handling basics", "posted"),
+        card("request", "Meera", 1.5 * H, "class", "DAA", 1, "Second half of the lecture", "open"),
+        card("doubt", "Kabir", 3 * H, "class", "Web Tech", 0, "Flexbox or grid for a layout", "open"),
+        card("shared", "Zainab", 4.5 * H, zm, "Python", 2, "Loops and functions", "posted"),
+        card("doubt", "Meera", 0.7 * H, zm, "OOP C++", 0, "When is a constructor called", "open"),
+        card("request", "Kabir", 2 * H, ak, "EVS", 3, "Water pollution chapter", "open"),
       ],
       reads: {},
     };
   }
 
-  function isValid(d) { return d && d.version === 2 && Array.isArray(d.messages) && d.reads && typeof d.reads === "object"; }
+  function isValid(d) { return d && d.version === DATA_VERSION && Array.isArray(d.messages) && d.reads && typeof d.reads === "object"; }
 
   // load(true) creates the demo data the first time; load(false) never writes (used by the storage event)
   function load(seedIfMissing) {
@@ -134,7 +148,7 @@
   }
 
   // ---------------------------------------------------------------- conversations and unread counts
-  const convoMessages = id => data.messages.filter(m => m.convo === id).sort((a, b) => a.ts - b.ts || (a.id < b.id ? -1 : 1));
+  const convoMessages = id => data.messages.filter(m => m.convo === id && isCard(m)).sort((a, b) => a.ts - b.ts || (a.id < b.id ? -1 : 1));
   const chatShown = () => ui.section && ui.section.offsetParent !== null && document.visibilityState === "visible";
 
   function unreadCount(id) {
@@ -159,7 +173,7 @@
       .concat(USERS.filter(u => u !== me).map(u => ({ id: dmId(me, u), title: nameOf(u) })));
     items.forEach(c => {
       const msgs = convoMessages(c.id), last = msgs[msgs.length - 1], unread = unreadCount(c.id);
-      // in the group show who spoke; in a one-to-one only mark your own messages
+      // in the group show who sent it; in a one-to-one only mark your own messages
       const who = last && last.from === me ? "You: " : (c.id === "class" && last ? nameOf(last.from) + ": " : "");
       const preview = last ? who + previewOf(last) : "No messages yet";
       const btn = el("button", { className: "chat-convo" + (c.id === convo ? " active" : ""), type: "button",
@@ -176,7 +190,7 @@
 
   function renderHeader() {
     ui.title.textContent = convo === "class" ? "Class group" : nameOf(convo.slice(3).split("|").find(u => u !== me));
-    ui.subtitle.textContent = convo === "class" ? "Everyone · demo users" : "One-to-one · demo users";
+    ui.subtitle.textContent = (convo === "class" ? "Everyone" : "One-to-one") + " · template messages only";
   }
 
   function renderMessages(forceBottom) {
@@ -185,11 +199,11 @@
     box.replaceChildren();
     const msgs = convoMessages(convo);
     if (!msgs.length) {
-      box.append(el("p", { className: "chat-empty", text: "No messages yet. Say hello!" }));
+      box.append(el("p", { className: "chat-empty", text: "No messages yet. Use one of the templates below to start." }));
       return;
     }
     let prevDay = "";
-    msgs.filter(m => m.type !== "request" || isRequest(m)).forEach(m => {
+    msgs.forEach(m => {
       if (dayKey(m.ts) !== prevDay) {
         prevDay = dayKey(m.ts);
         box.append(el("div", { className: "chat-day", text: dayLabel(m.ts) }));
@@ -199,24 +213,26 @@
     if (forceBottom || nearBottom) box.scrollTop = box.scrollHeight;
   }
 
-  // The card for a note request: Subject / Date / Topic, a status, and a button for everyone except the requester.
-  function renderRequest(m) {
-    const r = m.request;
+  // The card for one template message: Subject / Date / Topic, a status, and (for requests and doubts)
+  // an answer button for everyone except the person who sent it.
+  function renderCard(m) {
+    const k = KINDS[m.type], c = m.card;
     const row = (label, value) => el("div", { className: "chat-req-row" }, el("dt", { text: label }), el("dd", { text: value }));
-    const shared = r.status === "shared";
-    const status = el("span", { className: "chat-status " + (shared ? "shared" : "open"), text: shared ? "Shared" : "Open" });
-    const foot = el("div", { className: "chat-req-foot" }, status);
-    if (shared) {
-      foot.append(el("span", { className: "chat-req-by", text: `by ${idLabel(r.sharedBy)} at ${timeOf(r.sharedAt)}` }));
-    } else if (m.from !== me) {
-      const btn = el("button", { type: "button", className: "chat-btn", text: "I have these notes",
-        "aria-label": `I have the notes for ${r.subject}, ${prettyDate(r.date)}` });
-      btn.addEventListener("click", () => shareNotes(m.id));
+    const answered = m.type !== "shared" && c.status === k.done;
+    const state = k.states[c.status] || c.status;
+    const foot = el("div", { className: "chat-req-foot" },
+      el("span", { className: "chat-status " + (answered || m.type === "shared" ? "shared" : "open"), text: state }));
+    if (answered) {
+      foot.append(el("span", { className: "chat-req-by", text: `by ${idLabel(c.handledBy)} at ${timeOf(c.handledAt)}` }));
+    } else if (k.action && m.from !== me) {
+      const btn = el("button", { type: "button", className: "chat-btn", text: k.action,
+        "aria-label": `${k.action}: ${c.subject}, ${prettyDate(c.date)}` });
+      btn.addEventListener("click", () => answerCard(m.id));
       foot.append(btn);
     }
-    return el("div", { className: "chat-request", role: "group", "aria-label": `Note request: ${r.subject}` },
-      el("div", { className: "chat-req-title", text: "📝 Note request" }),
-      el("dl", { className: "chat-req-list" }, row("Subject", r.subject), row("Date", prettyDate(r.date)), row("Topic", r.topic)),
+    return el("div", { className: "chat-request", role: "group", "aria-label": `${k.title}: ${c.subject}` },
+      el("div", { className: "chat-req-title", text: `${k.icon} ${k.title}` }),
+      el("dl", { className: "chat-req-list" }, row("Subject", c.subject), row("Date", prettyDate(c.date)), row("Topic", c.topic)),
       foot);
   }
 
@@ -227,12 +243,11 @@
     const head = el("div", { className: "chat-meta" },
       el("span", { className: "chat-from", text: mine ? "You" : idLabel(m.from) }),
       el("time", { text: timeOf(m.ts), datetime: new Date(m.ts).toISOString() }));
-    const body = isRequest(m) ? renderRequest(m) : el("div", { className: "chat-text", text: m.text });   // textContent: typed HTML stays plain text
-    return el("div", { className: "chat-msg" + (mine ? " mine" : "") }, avatar, el("div", { className: "chat-bubble" }, head, body));
+    return el("div", { className: "chat-msg" + (mine ? " mine" : "") }, avatar, el("div", { className: "chat-bubble" }, head, renderCard(m)));
   }
 
   function render(forceBottom) {
-    if (ui.who) ui.who.textContent = idLabel(me) + (me !== (getSession() || {}).id && getSession() ? " (demo switch)" : "");
+    if (ui.who) ui.who.textContent = idLabel(me) + (getSession() && me !== getSession().id ? " (demo switch)" : "");
     renderHeader();
     renderMessages(forceBottom);
     markRead();          // before drawing the list, so the unread badge of the open conversation is already gone
@@ -245,76 +260,73 @@
   }
 
   // ---------------------------------------------------------------- actions
-  function sendText() {
-    const text = ui.input.value.trim().slice(0, MAX_TEXT);
-    if (!text) { ui.input.value = ""; return; }              // empty / spaces only: ignore
-    update(d => d.messages.push({ id: uid(), convo, from: me, ts: Date.now(), type: "text", text }));
-    ui.input.value = "";
-    render(true);
-    ui.input.focus();
-  }
-
-  // "I have these notes": only someone other than the requester, and only while the request is still open
-  function shareNotes(id) {
+  // "I have these notes" / "I can help": only someone other than the sender, and only while the card is still open
+  function answerCard(id) {
     update(d => {
       const m = d.messages.find(x => x.id === id);
-      if (m && isRequest(m) && m.request.status === "open" && m.from !== me) {
-        m.request.status = "shared";
-        m.request.sharedBy = me;
-        m.request.sharedAt = Date.now();
+      if (m && isCard(m) && KINDS[m.type].done && m.card.status === "open" && m.from !== me) {
+        m.card.status = KINDS[m.type].done;
+        m.card.handledBy = me;
+        m.card.handledAt = Date.now();
       }
     });
     render(false);
   }
 
-  // The request form has exactly three inputs: Subject, Date, Topic. Nothing else can be typed into a request.
-  function buildRequestDialog() {
-    ui.reqSubject = el("select", { id: "chat-req-subject", required: "" });
-    ui.reqDate = el("input", { id: "chat-req-date", type: "date", required: "" });
-    ui.reqTopic = el("input", { id: "chat-req-topic", type: "text", maxlength: String(MAX_TOPIC), required: "", placeholder: "e.g. Chapter 3, second half" });
-    ui.reqTarget = el("p", { className: "chat-req-target" });
-    ui.reqError = el("p", { className: "chat-req-error", role: "alert" });
+  // The form has exactly three inputs: Subject, Date, Topic. Nothing else can be typed into a message.
+  function buildDialog() {
+    ui.fSubject = el("select", { id: "chat-req-subject", required: "" });
+    ui.fDate = el("input", { id: "chat-req-date", type: "date", required: "" });
+    ui.fTopic = el("input", { id: "chat-req-topic", type: "text", maxlength: String(MAX_TOPIC), required: "" });
+    ui.fTarget = el("p", { className: "chat-req-target" });
+    ui.fError = el("p", { className: "chat-req-error", role: "alert" });
+    ui.fHeading = el("h4");
+    ui.fSend = el("button", { type: "submit", className: "chat-btn primary" });
     const field = (label, input, id) => el("div", { className: "chat-field" }, el("label", { for: id, text: label }), input);
     const cancel = el("button", { type: "button", className: "chat-btn", text: "Cancel" });
     cancel.addEventListener("click", () => ui.dialog.close());
     const form = el("form", { novalidate: "" },
-      el("h4", { text: "Request notes" }),
-      ui.reqTarget,
-      field("Subject", ui.reqSubject, "chat-req-subject"),
-      field("Date", ui.reqDate, "chat-req-date"),
-      field("Topic", ui.reqTopic, "chat-req-topic"),
-      ui.reqError,
-      el("div", { className: "chat-dialog-buttons" }, cancel, el("button", { type: "submit", className: "chat-btn primary", text: "Send request" })));
-    form.addEventListener("submit", e => { e.preventDefault(); submitRequest(); });
-    ui.dialog = el("dialog", { className: "chat-dialog", "aria-label": "Request notes" }, form);
-    ui.dialog.addEventListener("close", () => ui.requestBtn.focus());     // give focus back to the button that opened it
+      ui.fHeading, ui.fTarget,
+      field("Subject", ui.fSubject, "chat-req-subject"),
+      field("Date", ui.fDate, "chat-req-date"),
+      field("Topic", ui.fTopic, "chat-req-topic"),
+      ui.fError,
+      el("div", { className: "chat-dialog-buttons" }, cancel, ui.fSend));
+    form.addEventListener("submit", e => { e.preventDefault(); submitCard(); });
+    ui.dialog = el("dialog", { className: "chat-dialog", "aria-label": "Message template" }, form);
+    ui.dialog.addEventListener("close", () => { if (ui.opener) ui.opener.focus(); });   // focus goes back to the button that opened it
     document.body.append(ui.dialog);
   }
 
-  // prefill = {subject, date, topic} (all optional). The user always reviews and presses Send.
-  function openRequestForm(prefill) {
-    const subjects = subjectList();
-    ui.reqSubject.replaceChildren(el("option", { value: "", text: subjects.length ? "Choose a subject…" : "No subjects in the timetable" }),
+  // type: "request" | "shared" | "doubt". prefill = {subject, date, topic} (all optional). The user always reviews and presses Send.
+  function openForm(type, prefill, opener) {
+    kind = KINDS[type] ? type : "request";
+    const k = KINDS[kind], subjects = subjectList();
+    ui.opener = opener || ui.buttons[kind];
+    ui.fHeading.textContent = k.open;
+    ui.fSend.textContent = k.send;
+    ui.fTopic.placeholder = k.placeholder;
+    ui.fSubject.replaceChildren(el("option", { value: "", text: subjects.length ? "Choose a subject…" : "No subjects in the timetable" }),
       ...subjects.map(sub => el("option", { value: sub, text: sub })));
     const pre = prefill || {};
-    ui.reqSubject.value = subjects.includes(pre.subject) ? pre.subject : "";
-    ui.reqDate.value = validDate(pre.date) ? pre.date : localDate();     // defaults to today
-    ui.reqTopic.value = cleanTopic(pre.topic);
-    ui.reqError.textContent = "";
-    ui.reqTarget.textContent = "Sending to: " + ui.title.textContent;
+    ui.fSubject.value = subjects.includes(pre.subject) ? pre.subject : "";
+    ui.fDate.value = validDate(pre.date) ? pre.date : localDate();     // defaults to today
+    ui.fTopic.value = cleanTopic(pre.topic);
+    ui.fError.textContent = "";
+    ui.fTarget.textContent = "Sending to: " + ui.title.textContent;
     ui.dialog.showModal();
-    (ui.reqSubject.value ? ui.reqTopic : ui.reqSubject).focus();
+    (ui.fSubject.value ? ui.fTopic : ui.fSubject).focus();
   }
 
-  function submitRequest() {
-    const subject = ui.reqSubject.value, date = ui.reqDate.value, topic = cleanTopic(ui.reqTopic.value);
+  function submitCard() {
+    const subject = ui.fSubject.value, date = ui.fDate.value, topic = cleanTopic(ui.fTopic.value);
     let problem = "", field = null;
-    if (!subjectList().includes(subject)) { problem = "Choose a subject."; field = ui.reqSubject; }
-    else if (!validDate(date)) { problem = "Choose a valid date."; field = ui.reqDate; }
-    else if (!topic) { problem = "Write a short topic."; field = ui.reqTopic; }
-    if (problem) { ui.reqError.textContent = problem; field.focus(); return; }
-    update(d => d.messages.push({ id: uid(), convo, from: me, ts: Date.now(), type: "request",
-      request: { subject, date, topic, status: "open" } }));
+    if (!subjectList().includes(subject)) { problem = "Choose a subject."; field = ui.fSubject; }
+    else if (!validDate(date)) { problem = "Choose a valid date."; field = ui.fDate; }
+    else if (!topic) { problem = "Write a short topic."; field = ui.fTopic; }
+    if (problem) { ui.fError.textContent = problem; field.focus(); return; }
+    const status = kind === "shared" ? "posted" : "open";
+    update(d => d.messages.push({ id: uid(), convo, from: me, ts: Date.now(), type: kind, card: { subject, date, topic, status } }));
     ui.dialog.close();
     render(true);
   }
@@ -347,11 +359,6 @@
   }
 
   // ---------------------------------------------------------------- building the page
-  function injectStyles() {
-    const link = el("link", { rel: "stylesheet", href: "chat.css" });
-    document.head.append(link);
-  }
-
   function build() {
     const select = el("select", { id: "chat-as" },
       el("option", { value: "", text: "My login" }),
@@ -375,24 +382,22 @@
     ui.title = el("h3", { className: "chat-title" });
     ui.subtitle = el("span", { className: "chat-subtitle" });
     ui.messages = el("div", { className: "chat-messages", role: "log", "aria-live": "polite", "aria-label": "Messages", tabindex: "0" });
-    ui.input = el("textarea", { id: "chat-input", rows: "2", maxlength: String(MAX_TEXT), placeholder: "Write a message…" });
-    ui.input.addEventListener("keydown", e => {
-      if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendText(); }   // Shift+Enter = new line
+
+    // No text box: three template buttons are the only way to send a message
+    ui.buttons = {};
+    const actions = el("div", { className: "chat-actions" }, el("span", { className: "chat-actions-label", text: "Send a message from a template:" }));
+    Object.keys(KINDS).forEach(type => {
+      const btn = el("button", { type: "button", className: "chat-btn primary", id: "chat-new-" + type, text: `${KINDS[type].icon} ${KINDS[type].open}` });
+      btn.addEventListener("click", () => openForm(type, null, btn));
+      ui.buttons[type] = btn;
+      actions.append(btn);
     });
-    const sendBtn = el("button", { type: "button", className: "chat-btn primary", text: "Send" });
-    sendBtn.addEventListener("click", sendText);
-
-    const composer = el("div", { className: "chat-composer" },
-      el("label", { for: "chat-input", className: "chat-sr", text: "Message" }), ui.input, sendBtn,
-      el("span", { className: "chat-hint", text: "Enter to send · Shift+Enter for a new line" }));
-
-    ui.requestBtn = el("button", { type: "button", className: "chat-btn", text: "📝 Request notes" });
-    ui.requestBtn.addEventListener("click", () => openRequestForm());
-    buildRequestDialog();
+    actions.append(el("span", { className: "chat-hint", text: "Each template has only Subject, Date and Topic, so the chat stays on topic." }));
+    buildDialog();
 
     const pane = el("div", { className: "chat-pane" },
-      el("div", { className: "chat-pane-head" }, el("div", {}, ui.title, ui.subtitle), ui.requestBtn),
-      ui.messages, composer);
+      el("div", { className: "chat-pane-head" }, el("div", {}, ui.title, ui.subtitle)),
+      ui.messages, actions);
 
     ui.section = el("section", { id: "chat", className: "tab hidden" },
       el("h3", { text: "Chat" }), topbar, el("div", { className: "chat-shell" }, ui.list, pane));
@@ -413,7 +418,7 @@
   function init() {
     me = currentIdentity();
     data = load(true);
-    injectStyles();
+    document.head.append(el("link", { rel: "stylesheet", href: "chat.css" }));
     build();
     render(true);
 
@@ -425,14 +430,14 @@
     });
     document.addEventListener("visibilitychange", () => { if (chatShown()) render(true); });
 
-    // wrap login from app.js: if we arrived from Vision, open the Chat tab with the request form pre-filled.
-    // The form is only filled in; the user reviews it and presses Send (nothing is sent automatically).
+    // wrap login from app.js: the college ID that just logged in is the chat identity, and if we arrived from
+    // Vision, open the Chat tab with the request form pre-filled (the user reviews it and presses Send).
     let pending = readPrefill();
     const originalLogin = window.login;
     window.login = function () {
       originalLogin();
       if (!document.getElementById("dashboard").classList.contains("hidden")) {
-        me = currentIdentity();     // the college ID that just logged in is the chat identity
+        me = currentIdentity();
         render(true);
       }
       if (pending && !document.getElementById("dashboard").classList.contains("hidden")) {
@@ -441,7 +446,7 @@
         history.replaceState(null, "", location.pathname);   // so a reload does not open the form again
         window.showTab("chat");
         openConvo("class");
-        openRequestForm(prefill);
+        openForm("request", prefill, ui.buttons.request);
       }
     };
 

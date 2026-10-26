@@ -112,3 +112,8 @@
 .chat-demo-switch { flex: 1 1 100%; font-size: 13px; }
 .chat-demo-switch summary { cursor: pointer; color: #444; }
 .chat-demo-switch select { font-size: 14px; padding: 3px 6px; }
+
+/* template buttons (there is no free-text box) */
+.chat-actions { display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: center; padding: 8px 12px; border-top: 1px solid #ccc; background: #fafafa; }
+.chat-actions-label { font-weight: bold; font-size: 14px; }
+.chat-actions .chat-hint { flex: 1 1 100%; }
