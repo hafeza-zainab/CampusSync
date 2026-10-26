@@ -18,6 +18,8 @@ import urllib.request
 from playwright.sync_api import sync_playwright
 
 BASE = "http://localhost:8000"
+# Demo accounts: PLACEHOLDER college IDs (see store.js), not real people
+ID = {"Zainab": "DEMO-CS-001", "Aarav": "DEMO-CS-002", "Meera": "DEMO-CS-003", "Kabir": "DEMO-CS-004"}
 S = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "samples")
 results = []
 
@@ -122,6 +124,8 @@ def test_demo_flow(b):
 def test_announcements(b):
     errs = []
     ctx = b.new_context(viewport={"width": 1400, "height": 1100})
+    login_page = new_page(ctx, errs)
+    login_page.goto(BASE + "/campus/"); login_page.fill("#username", ID["Zainab"]); login_page.click("text=Enter")   # Vision reads who is logged in
     pg = new_page(ctx, errs)
     pg.goto(BASE + "/"); pg.click("#clear")
 
@@ -151,9 +155,10 @@ def test_announcements(b):
           pg.inner_text("#postMsg"))
     # does the existing attendance app show them?
     app = new_page(ctx, errs)
-    app.goto(BASE + "/campus/"); app.fill("#username", "Z"); app.click("text=Enter"); app.click("text=📢 Announcements")
+    app.goto(BASE + "/campus/"); app.fill("#username", ID["Zainab"]); app.click("text=Enter"); app.click("text=📢 Announcements")
     text = app.inner_text("#announceList")
-    check("announcements appear in the attendance app, 'by Vision'", text.count("— Vision") == 8, f"{text.count('— Vision')} found")
+    check("announcements appear in the attendance app, authored by the logged-in college ID, marked 'via Vision'",
+          text.count("— DEMO-CS-001 (STUDENT) · via Vision") == 8, f"{text.count('· via Vision')} found")
     check("announcements: no page errors", not errs, str(errs))
     ctx.close()
 
@@ -176,6 +181,51 @@ def test_catalog(b):
     ctx.close()
 
 
+def test_login(b):
+    """Step B: login with a college ID. The ID is the identity for attendance, announcements and chat."""
+    errs, dialogs = [], []
+    ctx = b.new_context(viewport={"width": 1400, "height": 1000})
+    pg = ctx.new_page()
+    pg.on("pageerror", lambda e: errs.append(str(e)[:100]))
+    pg.on("dialog", lambda d: (dialogs.append(d.type), d.accept()))
+    pg.goto(BASE + "/campus/")
+    bad = pg.evaluate("""() => [...document.querySelectorAll('input, select, textarea')].filter(e =>
+        /phone|mobile|tel|email|e-mail/i.test([e.type, e.id, e.name, e.placeholder, e.getAttribute('aria-label') || ''].join(' '))).length""")
+    check("login: no phone-number or email field anywhere in the app", bad == 0 and pg.locator("input[type=tel], input[type=email]").count() == 0)
+    check("login: the only text field is the college ID", pg.eval_on_selector_all("#loginBox input", "e => e.map(x => x.id)") == ["username"] and "College ID" in pg.inner_text("#loginBox"))
+    for bad_id in ["", "ab", "has space", "bad!id", "-start"]:   # (21+ characters cannot even be typed: the field has maxlength=20)
+        pg.fill("#username", bad_id); pg.click("text=Enter")
+        if pg.locator("#dashboard").is_visible() or "college ID" not in pg.inner_text("#loginError"):
+            check(f"login: invalid ID {bad_id!r} is rejected inline", False)
+            break
+    else:
+        check("login: empty / too short / spaces / symbols / leading hyphen are rejected with an inline message (no popup)", not pg.locator("#dashboard").is_visible())
+    pg.fill("#username", "demo-cs-001"); pg.select_option("#role", "cr"); pg.click("text=Enter")
+    check("login: a valid ID is accepted (lower case is normalised), the ID is shown", pg.locator("#dashboard").is_visible() and "DEMO-CS-001" in pg.inner_text("#welcome") and "CR" in pg.inner_text("#welcome"), pg.inner_text("#welcome"))
+    # attendance belongs to the ID
+    prev_month(pg); mark_attendance(pg, 0, "Present")
+    check("attendance is stored per college ID", pg.evaluate("localStorage.getItem('campussync.attendance.DEMO-CS-001')") is not None and pg.evaluate("localStorage.getItem('campussync.attendance')") is None)
+    # announcement author
+    pg.click(".tab-nav button >> text=Announcements"); pg.fill("#msg", "Library closed Friday"); pg.click("button:text('Post')")
+    check("announcement author is the college ID (and role)", "Library closed Friday — DEMO-CS-001 (CR)" in pg.inner_text("#announceList"), pg.inner_text("#announceList"))
+    pg.fill("#msg", "<img src=x onerror=window.__x=1>"); pg.click("button:text('Post')")
+    check("announcement text cannot inject HTML", pg.locator("#announceList img").count() == 0 and pg.evaluate("window.__x") is None)
+    # chat identity
+    pg.click(".tab-nav button >> text=Chat")
+    check("chat: you are chatting as the logged-in ID", "DEMO-CS-001" in pg.inner_text("#chat-me") and "demo switch" not in pg.inner_text("#chat-me"))
+    check("chat: senders are shown by college ID", "Aarav (DEMO-CS-002)" in pg.inner_text(".chat-messages"))
+    check("chat: the demo switch is hidden in a clearly labelled 'Demo only' section", pg.locator("details.chat-demo-switch summary").inner_text().startswith("Demo only") and not pg.locator("#chat-as").is_visible())
+    # log out, log in as someone else: their attendance is empty; mine is back when I return
+    pg.click("text=Logout"); pg.wait_for_selector("#loginBox", state="visible")
+    check("logout: returns to the login screen", pg.locator("#loginBox").is_visible() and not pg.locator("#dashboard").is_visible())
+    pg.fill("#username", ID["Aarav"]); pg.click("text=Enter"); prev_month(pg)
+    check("a different ID sees none of the first ID's attendance", pg.locator(".lecture.present").count() == 0)
+    pg.click("text=Logout"); pg.fill("#username", ID["Zainab"]); pg.click("text=Enter"); prev_month(pg)
+    check("the first ID gets its attendance back", pg.locator(".lecture.present").count() == 1)
+    check("login: no alert()/prompt() popups and no page errors", not dialogs and not errs, str(dialogs + errs))
+    ctx.close()
+
+
 def test_attendance(b):
     """Step A: attendance by month / day / subject, green / red / neutral, monthly stats, 75% warning."""
     errs, dialogs = [], []
@@ -183,7 +233,7 @@ def test_attendance(b):
     pg = ctx.new_page()
     pg.on("pageerror", lambda e: errs.append(str(e)[:100]))
     pg.on("dialog", lambda d: (dialogs.append(d.type), d.accept()))
-    pg.goto(BASE + "/campus/"); pg.fill("#username", "Z"); pg.click("text=Enter")
+    pg.goto(BASE + "/campus/"); pg.fill("#username", ID["Zainab"]); pg.click("text=Enter")
     now = datetime.date.today()
     check("attendance: opens on the current month", pg.inner_text("#monthYear") == now.strftime("%B %Y"), pg.inner_text("#monthYear"))
     prev_month(pg)
@@ -199,7 +249,7 @@ def test_attendance(b):
         unmarked: getComputedStyle([...document.querySelectorAll('.lecture:not(.present):not(.absent)')][0]).backgroundColor })""")
     check("attendance: attended = green, not attended = red, unmarked = neutral grey",
           colors == {"present": "rgb(46, 204, 113)", "absent": "rgb(231, 76, 60)", "unmarked": "rgb(204, 204, 204)"}, str(colors))
-    stored = json.loads(pg.evaluate("localStorage.getItem('campussync.attendance')"))
+    stored = json.loads(pg.evaluate("localStorage.getItem('campussync.attendance.DEMO-CS-001')"))
     check("attendance: stored shape unchanged ({'YYYY-M-D-Subject-time': 'present'|'absent'})",
           len(stored) == 4 and set(stored.values()) == {"present", "absent"} and all(re.match(r"^\d{4}-\d{1,2}-\d{1,2}-.+-\d{2}-\d{2}$", k) for k in stored), str(stored))
     row = pg.locator(".stat-row", has=pg.locator(".stat-name", has_text="Hindi")).first
@@ -211,7 +261,7 @@ def test_attendance(b):
           pg.locator(".attend-table tr").count() >= 8 and "below 75%" in pg.inner_text("#warning") and "3 of" in pg.inner_text("#presentCount"))
     pg.click(".tab-nav button >> text=Calendar")
     pg.locator(".lecture.absent").first.click(); pg.click(".attend-menu button:text-is('Clear')")
-    check("attendance: Clear removes a mark (back to neutral)", pg.locator(".lecture.absent").count() == 0 and len(json.loads(pg.evaluate("localStorage.getItem('campussync.attendance')"))) == 3)
+    check("attendance: Clear removes a mark (back to neutral)", pg.locator(".lecture.absent").count() == 0 and len(json.loads(pg.evaluate("localStorage.getItem('campussync.attendance.DEMO-CS-001')"))) == 3)
     pg.click("text=▶"); pg.click("text=▶")
     pg.locator(".lecture").first.click()
     check("attendance: a lecture that is not over cannot be marked (the menu says when it opens)", "hasn't finished yet" in pg.inner_text(".attend-menu") and pg.locator(".attend-menu button:text-is('Present')").count() == 0)
@@ -225,18 +275,18 @@ def test_attendance_bridge(b):
     errs = []
     ctx = b.new_context(viewport={"width": 1500, "height": 1000})
     app = new_page(ctx, errs)
-    app.goto(BASE + "/campus/"); app.fill("#username", "Z"); app.click("text=Enter")
+    app.goto(BASE + "/campus/"); app.fill("#username", ID["Zainab"]); app.click("text=Enter")
     first = app.inner_text("#monthYear"); app.click("text=▶"); second = app.inner_text("#monthYear"); app.click("text=◀")
     check("attendance app: month buttons work", first != second and app.inner_text("#monthYear") == first)
     prev_month(app)
     mark_attendance(app, 0, "Present"); mark_attendance(app, 3, "Present")
-    marks = app.evaluate("localStorage.getItem('campussync.attendance')")
+    marks = app.evaluate("localStorage.getItem('campussync.attendance.DEMO-CS-001')")
     check("attendance app: lectures can be marked (time format fixed) and are saved", marks and marks.count("present") == 2, marks)
     check("attendance app: stats panel shows percentages", "%" in app.inner_text("#stats"))
-    app.reload(); app.fill("#username", "Z"); app.click("text=Enter"); prev_month(app)
+    app.reload(); app.fill("#username", ID["Zainab"]); app.click("text=Enter"); prev_month(app)
     check("attendance app: marks survive a reload", app.locator(".lecture.present").count() == 2)
     app.click("text=📢 Announcements"); app.fill("#msg", "hello"); app.click("button:text('Post')")
-    check("attendance app: an announcement shows the poster's role, not 'undefined'", "hello — student" in app.inner_text("#announceList"), app.inner_text("#announceList"))
+    check("attendance app: an announcement shows the author's college ID and role, not 'undefined'", "hello — DEMO-CS-001 (STUDENT)" in app.inner_text("#announceList"), app.inner_text("#announceList"))
 
     pg = new_page(ctx, errs)
     pg.goto(BASE + "/"); pg.click("#clear")
@@ -248,16 +298,16 @@ def test_attendance_bridge(b):
     check("different timetable: warns that 2 marks would be hidden", "2 of these marks belong to lectures that are not in the new timetable" in pg.inner_text("#attendPreview"))
     check("nothing is written before the confirm click", pg.evaluate("localStorage.getItem('campussync.timetable')") is None)
     pg.click("#attendConfirm"); pg.wait_for_timeout(300)
-    check("attendance data is untouched by the replace", pg.evaluate("localStorage.getItem('campussync.attendance')") == marks)
+    check("attendance data is untouched by the replace", pg.evaluate("localStorage.getItem('campussync.attendance.DEMO-CS-001')") == marks)
     cal = new_page(ctx, errs)
-    cal.goto(BASE + "/campus/"); cal.fill("#username", "Z"); cal.click("text=Enter"); prev_month(cal)
+    cal.goto(BASE + "/campus/"); cal.fill("#username", ID["Zainab"]); cal.click("text=Enter"); prev_month(cal)
     subjects = cal.eval_on_selector_all(".lecture", "e => [...new Set(e.map(x => x.textContent.replace(/^[0-9:-]+ /, '')))]")
     check("attendance app now shows the new subjects", "Placeholder Algebra" in subjects and "Hindi" not in subjects, str(subjects))
     check("the 2 old marks are hidden, not deleted", cal.locator(".lecture.present").count() == 0)
     cal.close()
     pg.click("#attendUndo"); pg.wait_for_timeout(500)
     cal = new_page(ctx, errs)
-    cal.goto(BASE + "/campus/"); cal.fill("#username", "Z"); cal.click("text=Enter"); prev_month(cal)
+    cal.goto(BASE + "/campus/"); cal.fill("#username", ID["Zainab"]); cal.click("text=Enter"); prev_month(cal)
     check("Undo brings the old timetable and the 2 marks back", cal.locator(".lecture.present").count() == 2 and "Hindi" in cal.inner_text("#calendarGrid"))
     pg.select_option("#course", ""); pg.set_input_files("#file", os.path.join(S, "timetable_teacher_room.png")); wait_done(pg)
     check("low-confidence lectures: confirm disabled until 'I checked them' is ticked", pg.locator("#attendOk").count() == 1 and not pg.is_enabled("#attendConfirm"))
@@ -277,8 +327,8 @@ def chat_open(ctx, user, errors, dialogs):
     pg = ctx.new_page()
     pg.on("pageerror", lambda e: errors.append(str(e)[:100]))
     pg.on("dialog", lambda d: (dialogs.append(d.message), d.accept()))
-    pg.goto(BASE + "/campus/"); pg.fill("#username", user); pg.click("text=Enter")
-    pg.click(".tab-nav button >> text=Chat"); pg.select_option("#chat-as", user)
+    pg.goto(BASE + "/campus/"); pg.fill("#username", ID[user]); pg.click("text=Enter")
+    pg.click(".tab-nav button >> text=Chat")
     return pg
 
 
@@ -290,7 +340,7 @@ def test_chat(b):
     check("chat: the tab starts hidden-until-clicked and is built by chat.js", z.locator("#chat").is_visible() and z.locator(".tab-nav button", has_text="Chat").count() == 1)
     check("chat: seeded on first load (4 group messages + 1 open request, day separators)",
           z.locator(".chat-msg").count() == 5 and z.locator(".chat-request .chat-status.open").count() == 1 and z.locator(".chat-day").count() == 2)
-    check("chat: demo-users notice is shown", "Demo users" in z.inner_text(".chat-demo") and "no server sync" in z.inner_text(".chat-demo"))
+    check("chat: demo-accounts notice is shown", "placeholder college IDs" in z.inner_text(".chat-demo") and "no server sync" in z.inner_text(".chat-demo"))
     check("chat: conversation list = group + 3 classmates", z.eval_on_selector_all(".chat-convo-title", "e => e.map(x => x.textContent)") == ["Class group", "Aarav", "Meera", "Kabir"])
     check("chat: unread count shown on the Meera one-to-one", chat_conv(z, "Meera").locator(".chat-badge").inner_text() == "2")
 
@@ -346,10 +396,10 @@ def test_chat(b):
     a.wait_for_function("document.querySelectorAll('.chat-request').length === 2", timeout=5000)
     check("request: another user sees it Open with an 'I have these notes' button", acard.locator(".chat-status").inner_text() == "Open" and acard.locator("button").count() == 1)
     acard.locator("button").click()
-    check("request: pressing it marks it Shared with name and time", acard.locator(".chat-status").inner_text() == "Shared" and "by Aarav at" in acard.locator(".chat-req-by").inner_text())
+    check("request: pressing it marks it Shared with name and time", acard.locator(".chat-status").inner_text() == "Shared" and "by Aarav (DEMO-CS-002) at" in acard.locator(".chat-req-by").inner_text())
     z.wait_for_function("(() => { const c = document.querySelectorAll('.chat-request'); return c[c.length-1].querySelector('.chat-status').textContent === 'Shared'; })()", timeout=5000)
     zc = z.locator(".chat-request").last
-    check("request: the requester's tab shows Shared live, with who and when", "by Aarav at" in zc.locator(".chat-req-by").inner_text() and zc.locator("button").count() == 0)
+    check("request: the requester's tab shows Shared live, with who and when", "by Aarav (DEMO-CS-002) at" in zc.locator(".chat-req-by").inner_text() and zc.locator("button").count() == 0)
     k = chat_open(ctx, "Kabir", errs, dialogs)
     check("request: a third user sees Shared and no button", k.locator(".chat-request").last.locator(".chat-status").inner_text() == "Shared" and k.locator(".chat-request").last.locator("button").count() == 0)
     chat_conv(z, "Meera").click(); z.click("text=Request notes")
@@ -358,7 +408,7 @@ def test_chat(b):
     check("request: lands in that one-to-one, not in the group", z.locator(".chat-request").count() == 1)
 
     # persistence + reset
-    z.reload(); z.fill("#username", "Zainab"); z.click("text=Enter"); z.click(".tab-nav button >> text=Chat")
+    z.reload(); z.fill("#username", ID["Zainab"]); z.click("text=Enter"); z.click(".tab-nav button >> text=Chat")
     check("persistence: messages survive a reload", "live sync test" in z.inner_text(".chat-messages"))
     z.click("text=Reset chat")
     check("reset: first click only asks to confirm (no popup)", z.locator("text=Click again to reset").count() == 1 and "live sync test" in z.inner_text(".chat-messages"))
@@ -407,7 +457,7 @@ def test_chat_prefill(b):
     c.on("dialog", lambda d: (dialogs.append(d.message), d.accept()))
     c.wait_for_load_state()
     check("prefill: the campus app still shows its login first", c.locator("#loginBox").is_visible())
-    c.fill("#username", "Zainab"); c.click("text=Enter")
+    c.fill("#username", ID["Zainab"]); c.click("text=Enter")
     dlg = c.locator("dialog.chat-dialog")
     check("prefill: after login the Chat tab opens with the request form", c.locator("#chat").is_visible() and dlg.is_visible())
     check("prefill: subject and topic are filled from the lecture", c.input_value("#chat-req-subject") == "Hindi" and c.input_value("#chat-req-topic") == "Monday 07-08 lecture")
@@ -429,7 +479,7 @@ def main():
     api("/api/entries", "DELETE")
     with sync_playwright() as p:
         b = p.chromium.launch()
-        for test in (test_api, test_demo_flow, test_announcements, test_catalog, test_attendance, test_attendance_bridge, test_chat, test_chat_prefill):
+        for test in (test_api, test_demo_flow, test_announcements, test_catalog, test_login, test_attendance, test_attendance_bridge, test_chat, test_chat_prefill):
             print(f"\n== {test.__name__}")
             try:
                 test(b)

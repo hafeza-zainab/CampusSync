@@ -148,3 +148,8 @@ section {
 .attend-menu .attend-present { background: #2ecc71; color: #fff; border: 1px solid #1b8f4c; }
 .attend-menu .attend-absent { background: #e74c3c; color: #fff; border: 1px solid #a8281d; }
 .attend-menu button:focus-visible { outline: 3px solid #1a5fd0; outline-offset: 2px; }
+
+/* Login by college ID */
+#loginError { color: #b00020; font-weight: bold; min-height: 18px; margin: 6px 0 0; }
+.login-hint { font-size: 13px; color: #555; max-width: 360px; }
+.login-container label { display: block; font-weight: bold; margin-bottom: 4px; }

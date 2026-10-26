@@ -128,6 +128,7 @@
   </div>
 </section>
 
+<script src="/campus/store.js"></script>   <!-- shared login helpers: lastSession() etc. -->
 <script>
 const $ = id => document.getElementById(id);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -383,7 +384,9 @@ function postRow(row) {
   const body = row.entry.source_text || topic;
   list.push({
     msg: `${title} · ${date} · ${body}`,   // what the existing Announcements page displays
-    by: 'Vision',
+    by: (lastSession() || {}).id || 'Vision',   // the college ID that is logged in to the campus app
+    role: (lastSession() || {}).role,
+    via: 'Vision',
     title, date, source: row.source, key  // optional extras; the old page ignores them
   });
   writeAnnouncements(list);
@@ -484,8 +487,10 @@ async function showAttendance(entries) {
   const { timetable: cur, from } = await currentTimetable();
   const { next, skipped } = buildTimetable(entries, cur);
   const d = diffTimetables(cur, next);
-  const hidden = hiddenMarks(readJSON(ATT_KEY, {}), next);
-  const marks = Object.keys(readJSON(ATT_KEY, {})).length;
+  const who = (lastSession() || {}).id || '';
+  const myMarks = readJSON(ATT_KEY + '.' + who, {});        // attendance is stored per college ID
+  const hidden = hiddenMarks(myMarks, next);
+  const marks = Object.keys(myMarks).length;
   const low = entries.filter(e => e.confidence < LOW_CONFIDENCE && e.day && e.time);
   const perWeek = {};
   flatten(next).forEach(l => perWeek[l.subject] = (perWeek[l.subject] || 0) + 1);
@@ -500,7 +505,7 @@ async function showAttendance(entries) {
       <b>Unchanged:</b> ${d.kept.length}</div>
     <div class="box"><b>Lectures per week, per subject</b> (the calendar and the Monthly Stats panel count these):
       <div class="diff">${Object.entries(perWeek).map(([s, n]) => `<span class="chip">${esc(s)}: ${n}</span>`).join('')}</div></div>
-    <div class="box ${hidden.length ? 'warnbox' : ''}"><b>Attendance already marked: ${marks}.</b> None of it is edited or deleted.
+    <div class="box ${hidden.length ? 'warnbox' : ''}"><b>Attendance already marked${who ? ' by ' + esc(who) : ''}: ${marks}.</b> None of it is edited or deleted.${who ? '' : ' <span class="bad">Nobody is logged in to the campus app in this browser, so there are no marks to check. Log in there first.</span>'}
       ${hidden.length ? `<br><span class="bad">${hidden.length} of these marks belong to lectures that are not in the new timetable. They stay saved but the calendar will stop showing them (Undo brings them back):</span>
         <div class="diff">${hidden.slice(0, 8).map(h => `<span class="chip">${esc(h.date)} ${esc(h.subject)} ${esc(h.time)}: ${esc(h.status)}</span>`).join('')}${hidden.length > 8 ? `<span class="chip">+${hidden.length - 8} more</span>` : ''}</div>`
         : '<br><span class="ok">All of them still match a lecture in the new timetable.</span>'}</div>

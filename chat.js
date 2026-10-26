@@ -14,14 +14,16 @@
 (function () {
   "use strict";
 
-  const USERS = ["Zainab", "Aarav", "Meera", "Kabir"];                  // demo users
-  const COLORS = { Zainab: "#5b4bc4", Aarav: "#1f7a4a", Meera: "#b8400c", Kabir: "#0e6f86" };
-  const ME_KEY = "campussync.chat.me";   // sessionStorage: who THIS tab is chatting as (so two tabs can differ)
+  // The chat identity is the logged-in college ID (see store.js). The demo accounts have placeholder IDs.
+  const USERS = DEMO_USERS.map(u => u.id);
+  const COLORS = { "DEMO-CS-001": "#5b4bc4", "DEMO-CS-002": "#1f7a4a", "DEMO-CS-003": "#b8400c", "DEMO-CS-004": "#0e6f86" };
+  const ME_KEY = "campussync.chat.demoswitch";   // sessionStorage: DEMO-ONLY override of who this tab chats as
+  const nameOf = id => demoName(id) || id;       // "Aarav" for a demo ID, otherwise the ID itself
   const MAX_TEXT = 1000;
   const MAX_TOPIC = 80;   // a note request's topic is a short text
 
   let data = null;       // { messages: [...], reads: { user: { conversation: lastReadTime } } }
-  let me = USERS[0];     // current demo user in this tab
+  let me = USERS[0];     // who this tab chats as: the logged-in college ID (or the demo switch)
   let convo = "class";   // id of the open conversation
   const ui = {};         // DOM elements we need to find again
 
@@ -39,7 +41,15 @@
     return node;
   }
 
-  // one-to-one conversations have one id for the pair, whoever is "me": dmId("Zainab","Meera") === dmId("Meera","Zainab")
+  function currentIdentity() {
+    let override = "";
+    try { override = sessionStorage.getItem(ME_KEY) || ""; } catch (e) { /* private mode */ }
+    if (USERS.includes(override)) return override;
+    const session = getSession();
+    return session && session.id ? session.id : USERS[0];
+  }
+
+  // one-to-one conversations have one id for the pair, whoever is "me": dmId(a, b) === dmId(b, a)
   const dmId = (a, b) => "dm:" + [a, b].sort().join("|");
   const uid = () => "m" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
   const timeOf = ts => new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -77,16 +87,17 @@
   // ---------------------------------------------------------------- storage (uses store.js)
   function seedData() {
     const now = Date.now(), H = 3600 * 1000, D = 24 * H;
-    const msg = (from, ago, text, c = "class") => ({ id: uid(), convo: c, from, ts: now - ago, type: "text", text });
-    const zm = dmId("Zainab", "Meera"), ak = dmId("Aarav", "Kabir");
+    const U = name => DEMO_USERS.find(u => u.name === name).id;      // "Meera" -> "DEMO-CS-003"
+    const msg = (from, ago, text, c = "class") => ({ id: uid(), convo: c, from: U(from), ts: now - ago, type: "text", text });
+    const zm = dmId(U("Zainab"), U("Meera")), ak = dmId(U("Aarav"), U("Kabir"));
     const subjects = subjectList();
     const request = {   // one open note request from Meera, so the tab is not empty on first load
-      id: uid(), convo: "class", from: "Meera", ts: now - 1.5 * H, type: "request",
+      id: uid(), convo: "class", from: U("Meera"), ts: now - 1.5 * H, type: "request",
       request: { subject: subjects.includes("DAA") ? "DAA" : (subjects[0] || "Subject"), date: localDate(new Date(now - D)),
                  topic: "Second half of the lecture", status: "open" },
     };
     return {
-      version: 1,
+      version: 2,   // 2 = senders are college IDs (version 1 used first names and is replaced by fresh demo data)
       messages: [
         msg("Aarav", D + 3 * H, "Hi all! Is the DAA assignment still due this Friday?"),
         msg("Meera", D + 2.5 * H, "Yes, Friday. I'll post my notes once I've cleaned them up."),
@@ -102,7 +113,7 @@
     };
   }
 
-  function isValid(d) { return d && Array.isArray(d.messages) && d.reads && typeof d.reads === "object"; }
+  function isValid(d) { return d && d.version === 2 && Array.isArray(d.messages) && d.reads && typeof d.reads === "object"; }
 
   // load(true) creates the demo data the first time; load(false) never writes (used by the storage event)
   function load(seedIfMissing) {
@@ -145,11 +156,11 @@
   function renderConvoList() {
     ui.list.replaceChildren();
     const items = [{ id: "class", title: "Class group" }]
-      .concat(USERS.filter(u => u !== me).map(u => ({ id: dmId(me, u), title: u })));
+      .concat(USERS.filter(u => u !== me).map(u => ({ id: dmId(me, u), title: nameOf(u) })));
     items.forEach(c => {
       const msgs = convoMessages(c.id), last = msgs[msgs.length - 1], unread = unreadCount(c.id);
       // in the group show who spoke; in a one-to-one only mark your own messages
-      const who = last && last.from === me ? "You: " : (c.id === "class" && last ? last.from + ": " : "");
+      const who = last && last.from === me ? "You: " : (c.id === "class" && last ? nameOf(last.from) + ": " : "");
       const preview = last ? who + previewOf(last) : "No messages yet";
       const btn = el("button", { className: "chat-convo" + (c.id === convo ? " active" : ""), type: "button",
         "aria-current": c.id === convo ? "true" : "false" },
@@ -164,7 +175,7 @@
   }
 
   function renderHeader() {
-    ui.title.textContent = convo === "class" ? "Class group" : convo.slice(3).split("|").find(u => u !== me);
+    ui.title.textContent = convo === "class" ? "Class group" : nameOf(convo.slice(3).split("|").find(u => u !== me));
     ui.subtitle.textContent = convo === "class" ? "Everyone · demo users" : "One-to-one · demo users";
   }
 
@@ -196,7 +207,7 @@
     const status = el("span", { className: "chat-status " + (shared ? "shared" : "open"), text: shared ? "Shared" : "Open" });
     const foot = el("div", { className: "chat-req-foot" }, status);
     if (shared) {
-      foot.append(el("span", { className: "chat-req-by", text: `by ${r.sharedBy} at ${timeOf(r.sharedAt)}` }));
+      foot.append(el("span", { className: "chat-req-by", text: `by ${idLabel(r.sharedBy)} at ${timeOf(r.sharedAt)}` }));
     } else if (m.from !== me) {
       const btn = el("button", { type: "button", className: "chat-btn", text: "I have these notes",
         "aria-label": `I have the notes for ${r.subject}, ${prettyDate(r.date)}` });
@@ -211,16 +222,17 @@
 
   function renderMessage(m) {
     const mine = m.from === me;
-    const avatar = el("span", { className: "chat-avatar", text: m.from[0], "aria-hidden": "true" });
+    const avatar = el("span", { className: "chat-avatar", text: nameOf(m.from)[0], "aria-hidden": "true" });
     avatar.style.background = COLORS[m.from] || "#555";
     const head = el("div", { className: "chat-meta" },
-      el("span", { className: "chat-from", text: mine ? "You" : m.from }),
+      el("span", { className: "chat-from", text: mine ? "You" : idLabel(m.from) }),
       el("time", { text: timeOf(m.ts), datetime: new Date(m.ts).toISOString() }));
     const body = isRequest(m) ? renderRequest(m) : el("div", { className: "chat-text", text: m.text });   // textContent: typed HTML stays plain text
     return el("div", { className: "chat-msg" + (mine ? " mine" : "") }, avatar, el("div", { className: "chat-bubble" }, head, body));
   }
 
   function render(forceBottom) {
+    if (ui.who) ui.who.textContent = idLabel(me) + (me !== (getSession() || {}).id && getSession() ? " (demo switch)" : "");
     renderHeader();
     renderMessages(forceBottom);
     markRead();          // before drawing the list, so the unread badge of the open conversation is already gone
@@ -307,9 +319,13 @@
     render(true);
   }
 
-  function switchUser(name) {
-    me = USERS.includes(name) ? name : USERS[0];
-    try { sessionStorage.setItem(ME_KEY, me); } catch (e) { /* private mode: just not remembered */ }
+  // DEMO ONLY: chat as another demo account in this tab (for the two-tab demo). "" goes back to the login ID.
+  function switchUser(id) {
+    try {
+      if (USERS.includes(id)) sessionStorage.setItem(ME_KEY, id);
+      else sessionStorage.removeItem(ME_KEY);
+    } catch (e) { /* private mode: just not remembered */ }
+    me = currentIdentity();
     convo = "class";
     render(true);
   }
@@ -337,18 +353,23 @@
   }
 
   function build() {
-    const select = el("select", { id: "chat-as", "aria-label": "Chatting as" },
-      ...USERS.map(u => el("option", { value: u, text: u })));
+    const select = el("select", { id: "chat-as" },
+      el("option", { value: "", text: "My login" }),
+      ...USERS.map(u => el("option", { value: u, text: idLabel(u) })));
     select.addEventListener("change", () => switchUser(select.value));
     ui.as = select;
+    ui.who = el("strong", { id: "chat-me" });
 
     ui.reset = el("button", { type: "button", className: "chat-btn", text: "Reset chat" });
     ui.reset.addEventListener("click", resetChat);
 
     const topbar = el("div", { className: "chat-topbar" },
-      el("label", { for: "chat-as", text: "Chatting as " }), select,
-      el("span", { className: "chat-demo", text: "Demo users: simulated in this browser, no server sync. Open a second tab and pick another user." }),
-      ui.reset);
+      el("span", { className: "chat-who" }, "Chatting as ", ui.who),
+      el("span", { className: "chat-demo", text: "Demo accounts with placeholder college IDs, simulated in this browser, no server sync." }),
+      ui.reset,
+      el("details", { className: "chat-demo-switch" },
+        el("summary", { text: "Demo only: chat as another demo account (for the two-tab demo)" }),
+        el("label", { for: "chat-as", text: "Chat as " }), select));
 
     ui.list = el("ul", { className: "chat-convos", "aria-label": "Conversations" });
     ui.title = el("h3", { className: "chat-title" });
@@ -390,12 +411,10 @@
   }
 
   function init() {
-    try { me = sessionStorage.getItem(ME_KEY) || USERS[0]; } catch (e) { me = USERS[0]; }
-    if (!USERS.includes(me)) me = USERS[0];
+    me = currentIdentity();
     data = load(true);
     injectStyles();
     build();
-    ui.as.value = me;
     render(true);
 
     // another tab changed the chat -> show it (this is what keeps two tabs in sync)
@@ -412,6 +431,10 @@
     const originalLogin = window.login;
     window.login = function () {
       originalLogin();
+      if (!document.getElementById("dashboard").classList.contains("hidden")) {
+        me = currentIdentity();     // the college ID that just logged in is the chat identity
+        render(true);
+      }
       if (pending && !document.getElementById("dashboard").classList.contains("hidden")) {
         const prefill = pending;
         pending = null;

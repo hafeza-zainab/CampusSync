@@ -106,3 +106,9 @@
 .chat-dialog-buttons { display: flex; justify-content: flex-end; gap: 8px; }
 .chat-dialog .chat-btn { font-size: 14px; padding: 6px 12px; border: 1px solid #aaa; border-radius: 4px; background: #f3f3f3; cursor: pointer; }
 .chat-dialog .chat-btn.primary { background: #1a5fd0; border-color: #1a5fd0; color: #fff; }
+
+/* identity + demo-only switch */
+.chat-who { font-size: 14px; }
+.chat-demo-switch { flex: 1 1 100%; font-size: 13px; }
+.chat-demo-switch summary { cursor: pointer; color: #444; }
+.chat-demo-switch select { font-size: 14px; padding: 3px 6px; }

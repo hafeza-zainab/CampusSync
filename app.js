@@ -1,5 +1,5 @@
 let user = {};
-let attendance = loadStore("attendance", {});
+let attendance = {};   // loaded at login: each college ID has its own marks (key "attendance.<ID>")
 
 // Load saved data (store.js). Vision writes to the same keys.
 announcements = loadStore("announcements", []);
@@ -21,22 +21,26 @@ let currentUser = null;
 let currentRole = null;
 
 function login() {
-  const name = document.getElementById("username").value.trim();
+  const id = normalizeId(document.getElementById("username").value);   // college ID, e.g. DEMO-CS-001
   const role = document.getElementById("role").value;
+  const error = document.getElementById("loginError");
 
-  if (!name) {
-    alert("Please enter your name");
+  if (!isValidId(id)) {
+    error.textContent = "Enter your college ID: 4 to 20 letters, digits or hyphens (for example DEMO-CS-001).";
     return;
   }
+  error.textContent = "";
 
-  currentUser = name;
+  currentUser = id;      // the college ID is the identity: attendance, announcements and chat all use it
   currentRole = role;
+  setSession({ id, role });
+  attendance = loadStore("attendance", {}, currentUser);
 
   document.getElementById("loginBox").style.display = "none";
   document.getElementById("dashboard").classList.remove("hidden");
 
   document.getElementById("welcome").innerText =
-    `Welcome ${currentUser} (${currentRole.toUpperCase()})`;
+    `Welcome ${idLabel(currentUser)} (${currentRole.toUpperCase()})`;
 
   renderCalendar();
 }
@@ -217,11 +221,16 @@ function renderMaterials() {
 
 /* ANNOUNCEMENTS */
 function postAnnouncement() {
+  const text = msg.value.trim();
+  if (!text) return;                       // ignore empty announcements
+  announcements = loadStore("announcements", announcements);   // keep posts made from other tabs / Vision
   announcements.push({
-    msg: msg.value,
-    by: currentRole
+    msg: text,
+    by: currentUser,                       // the author is the college ID
+    role: currentRole
   });
   saveStore("announcements", announcements);
+  msg.value = "";
   renderAnnouncements();
 }
 
@@ -229,7 +238,10 @@ function renderAnnouncements() {
   let div = document.getElementById("announceList");
   div.innerHTML = "";
   announcements.forEach(a => {
-    div.innerHTML += `<p>📢 ${a.msg} — ${a.by}</p>`;
+    // text is added with textContent, so text read from a screenshot can never inject HTML
+    const p = document.createElement("p");
+    p.textContent = `📢 ${a.msg} — ${a.by}` + (a.role ? ` (${String(a.role).toUpperCase()})` : "") + (a.via ? ` · via ${a.via}` : "");
+    div.appendChild(p);
   });
 }
 
@@ -237,7 +249,7 @@ function renderAnnouncements() {
 function markAttendance(key, status) {
   if (status) attendance[key] = status;
   else delete attendance[key];
-  saveStore("attendance", attendance);
+  saveStore("attendance", attendance, currentUser);
   closeAttendanceMenu();
   renderCalendar();
 }
@@ -306,6 +318,11 @@ function showTab(id) {
     announcements = loadStore("announcements", announcements); // pick up posts made from Vision
     renderAnnouncements(); // show the list when the tab opens, not only after posting
   }
+}
+
+function logout() {
+  clearSession();
+  location.reload();     // back to the login screen with nothing left in memory
 }
 
 function changeMonth(dir) {
