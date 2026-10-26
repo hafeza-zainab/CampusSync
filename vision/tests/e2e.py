@@ -226,6 +226,68 @@ def test_login(b):
     ctx.close()
 
 
+def frame_done(vf):
+    """Wait for a full upload run inside the embedded Vision frame."""
+    vf.wait_for_function("document.getElementById('capText').innerText.startsWith('1')", timeout=15000)
+    vf.wait_for_function("document.getElementById('capText').innerText.startsWith('6')", timeout=90000)
+    vf.wait_for_timeout(1200)
+
+
+def test_import(b):
+    """Step C: Vision inside the app. Results reach the Calendar, Announcements and the Study Panel store without a reload."""
+    errs, dialogs = [], []
+    ctx = b.new_context(viewport={"width": 1500, "height": 1000})
+    app = new_page(ctx, errs)
+    app.on("dialog", lambda d: (dialogs.append(d.type), d.accept()))
+    app.goto(BASE + "/campus/"); app.fill("#username", ID["Zainab"]); app.click("text=Enter")
+    api("/api/entries", "DELETE")
+    nav = app.locator(".tab-nav button", has_text="Import from screenshot")
+    check("import: the app nav has an 'Import from screenshot' entry", nav.count() == 1)
+    check("import: the Vision page is not loaded until the tab is opened", app.locator("#importFrame").get_attribute("src") is None)
+    nav.click()
+    app.wait_for_function("document.getElementById('importFrame').contentDocument && document.getElementById('importFrame').contentDocument.getElementById('file')", timeout=15000)
+    vf = app.frame(url=re.compile("embedded=1"))
+    check("import: opens Vision inside the app", app.locator("#import").is_visible() and vf is not None)
+    check("import: embedded Vision hides its own header (the app nav is above)", vf.evaluate("getComputedStyle(document.querySelector('header')).display") == "none")
+
+    # notice -> announcements (existing review card) and -> Study Panel store
+    vf.set_input_files("#file", os.path.join(S, "notice.png")); frame_done(vf)
+    vf.click("#postAll")
+    app.click(".tab-nav button >> text=Announcements")
+    text = app.inner_text("#announceList")
+    check("import: notice entries posted from the Import tab show in Announcements without a reload",
+          text.count("· via Vision") == 5 and "— DEMO-CS-001 (STUDENT)" in text, f"{text.count('via Vision')} found")
+    study = json.loads(app.evaluate("localStorage.getItem('campussync.study')") or "[]")
+    check("import: every extracted entry is saved for the Study Panel with its source", len(study) == 5 and all(x["source"] == "vision" and x["via"] == "notice.png" and x["addedBy"] == "DEMO-CS-001" for x in study), f"{len(study)} items")
+
+    # timetable -> calendar (existing preview + confirm), live
+    app.click(".tab-nav button >> text=Import from screenshot")
+    vf.select_option("#course", "demo-a"); vf.select_option("#sem", "sem1")
+    vf.set_input_files("#file", os.path.join(S, "timetable_teacher_room.png")); frame_done(vf)
+    check("import: a timetable shows the preview and needs a confirm click (nothing changed yet)",
+          "Replace timetable" in vf.inner_text("#attendConfirm") and app.evaluate("localStorage.getItem('campussync.timetable')") is None)
+    vf.click("#attendConfirm")
+    app.click(".tab-nav button >> text=Calendar")
+    subjects = app.eval_on_selector_all(".lecture", "e => [...new Set(e.map(x => x.textContent.replace(/^[0-9:-]+ /, '')))]")
+    check("import: after confirming, the Calendar shows the new timetable without a reload", "Placeholder Algebra" in subjects and "Hindi" not in subjects, str(subjects))
+    study = json.loads(app.evaluate("localStorage.getItem('campussync.study')") or "[]")
+    check("import: the timetable's entries were added to the Study Panel store too (5 notice + 7 lectures)", len(study) == 12, f"{len(study)} items")
+    app.click(".tab-nav button >> text=Import from screenshot")
+    vf.click("#attendUndo")
+    app.click(".tab-nav button >> text=Calendar")
+    check("import: Undo in Vision brings the original timetable back in the Calendar", "Hindi" in app.inner_text("#calendarGrid"))
+    check("import: no popups and no page errors", not dialogs and not errs, str(dialogs + errs))
+
+    # back link on the standalone page
+    solo = new_page(ctx, errs)
+    solo.goto(BASE + "/")
+    check("import: the standalone Vision page has a visible '← Back to CampusSync' link", solo.locator(".back-link").is_visible() and "Back to CampusSync" in solo.inner_text(".back-link"))
+    solo.click(".back-link"); solo.wait_for_load_state()
+    check("import: the back link goes to the campus app", solo.url.rstrip("/").endswith("/campus"), solo.url)
+    api("/api/entries", "DELETE")
+    ctx.close()
+
+
 def test_attendance(b):
     """Step A: attendance by month / day / subject, green / red / neutral, monthly stats, 75% warning."""
     errs, dialogs = [], []
@@ -479,7 +541,7 @@ def main():
     api("/api/entries", "DELETE")
     with sync_playwright() as p:
         b = p.chromium.launch()
-        for test in (test_api, test_demo_flow, test_announcements, test_catalog, test_login, test_attendance, test_attendance_bridge, test_chat, test_chat_prefill):
+        for test in (test_api, test_demo_flow, test_announcements, test_catalog, test_login, test_import, test_attendance, test_attendance_bridge, test_chat, test_chat_prefill):
             print(f"\n== {test.__name__}")
             try:
                 test(b)

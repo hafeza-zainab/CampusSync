@@ -3,12 +3,16 @@ let attendance = {};   // loaded at login: each college ID has its own marks (ke
 
 // Load saved data (store.js). Vision writes to the same keys.
 announcements = loadStore("announcements", []);
-const savedTimetable = loadStore("timetable", null);
-if (savedTimetable) {
-  // timetable is a const in data.js, so replace its contents instead of the variable
+
+// timetable is a const in data.js, so we replace its CONTENTS instead of the variable.
+// The data.js version is remembered so "Undo" in Vision can bring it back.
+const defaultTimetable = JSON.parse(JSON.stringify(timetable));
+function applySavedTimetable() {
+  const source = loadStore("timetable", null) || defaultTimetable;
   Object.keys(timetable).forEach(day => delete timetable[day]);
-  Object.assign(timetable, savedTimetable);
+  Object.assign(timetable, JSON.parse(JSON.stringify(source)));
 }
+applySavedTimetable();
 let currentDate = new Date(new Date().getFullYear(), new Date().getMonth()); // the current month
 
 // Per-subject numbers for the month on screen. renderCalendar() fills them; checkWarnings() and the stats read them.
@@ -324,6 +328,18 @@ function logout() {
   clearSession();
   location.reload();     // back to the login screen with nothing left in memory
 }
+
+// Vision (in the Import tab, or another tab) saved a new timetable or announcement: show it without a reload
+window.addEventListener("storage", e => {
+  if (e.key === STORE_KEYS.timetable) {
+    applySavedTimetable();
+    if (currentUser) renderCalendar();
+  }
+  if (e.key === STORE_KEYS.announcements) {
+    announcements = loadStore("announcements", announcements);
+    if (currentUser) renderAnnouncements();
+  }
+});
 
 function changeMonth(dir) {
   currentDate.setMonth(currentDate.getMonth() + dir);
