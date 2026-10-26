@@ -50,6 +50,12 @@
 
   build();
 
+  // the embedded Vision page reports how tall it is; the frame grows to fit, so the app page scrolls (not a box inside it)
+  window.addEventListener("message", e => {
+    if (e.origin !== location.origin || !e.data || typeof e.data.visionHeight !== "number") return;
+    frame.style.height = Math.max(640, Math.min(Math.ceil(e.data.visionHeight) + 4, 5000)) + "px";
+  });
+
   // load the Vision page the first time the tab is opened (?embedded=1 hides its own header and shows no back link)
   const originalShowTab = window.showTab;
   window.showTab = function (id) {

@@ -136,7 +136,14 @@
 <script src="/campus/store.js"></script>   <!-- shared login helpers: lastSession() etc. -->
 <script>
 const $ = id => document.getElementById(id);
-if (new URLSearchParams(location.search).get('embedded') === '1') document.body.classList.add('embedded');
+if (new URLSearchParams(location.search).get('embedded') === '1') {
+  document.body.classList.add('embedded');
+  // inside the campus app's Import tab: tell the app how tall this page is, so its frame can grow to fit
+  // (the whole app page then scrolls, instead of a small scrolling box inside the page)
+  const sendHeight = () => parent.postMessage({ visionHeight: document.documentElement.scrollHeight }, location.origin);
+  new ResizeObserver(sendHeight).observe(document.body);
+  sendHeight();
+}
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const SEM = {sem1:'Semester 1',sem2:'Semester 2',sem3:'Semester 3',sem4:'Semester 4',sem5:'Semester 5',sem6:'Semester 6'};
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));

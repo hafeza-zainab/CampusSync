@@ -278,6 +278,9 @@ def test_import(b):
     app.click(".tab-nav button >> text=Import from screenshot")
     vf.select_option("#course", "demo-a"); vf.select_option("#sem", "sem1")
     vf.set_input_files("#file", os.path.join(S, "timetable_teacher_room.png")); frame_done(vf)
+    box = app.locator("#importFrame").bounding_box()
+    check("import: the frame grows to fit the Vision page, so the app page scrolls and the confirm button is reachable without an inner scrollbar",
+          box["height"] > 1200 and vf.evaluate("document.documentElement.scrollHeight") <= box["height"] + 10, f"frame {box['height']:.0f}px")
     check("import: a timetable shows the preview and needs a confirm click (nothing changed yet)",
           "Replace timetable" in vf.inner_text("#attendConfirm") and app.evaluate("localStorage.getItem('campussync.timetable')") is None)
     vf.click("#attendConfirm")
