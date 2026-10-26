@@ -1,0 +1,60 @@
+{
+  "mode": "timetable",
+  "entries": [
+    {
+      "subject": "Hindi",
+      "day": "Monday",
+      "time": "07-08"
+    },
+    {
+      "subject": "OOP C++",
+      "day": "Monday",
+      "time": "08-09"
+    },
+    {
+      "subject": "Extension Work",
+      "day": "Monday",
+      "time": "09-10"
+    },
+    {
+      "subject": "Python",
+      "day": "Tuesday",
+      "time": "10-11"
+    },
+    {
+      "subject": "Web Tech",
+      "day": "Tuesday",
+      "time": "12-01"
+    },
+    {
+      "subject": "EVS",
+      "day": "Wednesday",
+      "time": "07-08"
+    },
+    {
+      "subject": "DAA",
+      "day": "Wednesday",
+      "time": "08-09"
+    },
+    {
+      "subject": "OOP C++",
+      "day": "Thursday",
+      "time": "08-09"
+    },
+    {
+      "subject": "Advanced Python",
+      "day": "Thursday",
+      "time": "12-01"
+    },
+    {
+      "subject": "EVS",
+      "day": "Friday",
+      "time": "07-08"
+    },
+    {
+      "subject": "Leadership",
+      "day": "Friday",
+      "time": "08-09"
+    }
+  ]
+}

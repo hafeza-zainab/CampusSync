@@ -1,0 +1,35 @@
+{
+  "mode": "notice",
+  "entries": [
+    {
+      "subject": "DAA",
+      "date": "2026-11-14",
+      "topic": "Dynamic Programming",
+      "task": "Submit assignment"
+    },
+    {
+      "subject": "Python",
+      "date": "2026-11-18",
+      "topic": "File Handling",
+      "task": "Lab / viva"
+    },
+    {
+      "subject": "OOP C++",
+      "date": "2026-11-21",
+      "topic": "Inheritance and Polymorphism",
+      "task": "Exam / test"
+    },
+    {
+      "subject": "Web Tech",
+      "date": "2026-12-02",
+      "topic": "Portfolio website",
+      "task": "Project / demo"
+    },
+    {
+      "subject": "EVS",
+      "date": "2026-11-25",
+      "topic": "Water Pollution",
+      "task": "Exam / test"
+    }
+  ]
+}

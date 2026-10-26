@@ -32,3 +32,13 @@ A picture is just a grid of numbers. OpenCV loads it as a numpy array: `img[y][x
 - Grid detection needs visible table lines. Borderless timetables fall back to free-text mode, which suits notices but not grids.
 - Extraction is rule-based (regex plus fuzzy match), not an LLM. It is predictable and offline, but only knows the date/task formats written in `pipeline.py`.
 - SAM (Segment Anything) is **not** used. Classical morphology was enough for ruled tables and needs no GPU. SAM would be the upgrade for photos of curved paper or borderless layouts.
+
+## Measuring accuracy: eval.py
+`eval.py` is how we know the numbers in the README are real.
+1. For every image/PDF in `real_samples/` that has a `NAME.truth.json` (the answer key you write by hand), it runs `pipeline.analyze()` and times it.
+2. `compare()` pairs each truth entry with an extracted entry using a **key**: subject + day for timetables, subject + date for notices.
+3. For notices the topic and task text are then compared with `difflib.SequenceMatcher` (a 0-1 "how alike are these strings" score). Below the threshold it is a **partial**, which is reported and *not* counted correct.
+4. Entries with no partner are **missed** (in the key, not found) or **extra** (found, not in the key).
+5. It prints a table and writes `eval_results.md`. `py eval.py --dir samples` does the same for the synthetic images and writes `eval_results_samples.md`.
+
+How to write a truth file: see `real_samples/README.md`. `make_sample.py` also writes truth files for the synthetic samples, as working examples.

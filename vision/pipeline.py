@@ -292,6 +292,8 @@ def parse_timetable(rows, blocks, semester, today=None):
                 "date": next_weekday(day, today).isoformat(),
                 "task": "Attend lecture" + (f" ({time_txt})" if time_txt else ""),
                 "kind": "lecture",
+                "day": day,
+                "time": time_txt,
                 "confidence": 0.99 if known else 0.7,
                 "source_box": box,
             })
