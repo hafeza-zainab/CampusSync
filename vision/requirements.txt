@@ -4,6 +4,7 @@ python-multipart
 opencv-python-headless
 numpy
 pymupdf
+pillow
 rapidocr
 onnxruntime
 # optional fallback OCR (needs the Tesseract program installed): pytesseract

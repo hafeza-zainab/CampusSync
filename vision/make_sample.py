@@ -7,6 +7,8 @@
   samples/timetable_teacher_room.png - cells hold subject + teacher initials + room (placeholder course)
   samples/notice_teacher_room.png    - notice lines that mention "Prof. ..." and "Room ..."
   samples/notice*.pdf     - the notice as an image-only PDF and as a text-layer PDF
+  samples/timetable_exif6.jpg / timetable_exif3.jpg - phone-style JPEGs whose PIXELS are rotated
+                            (90 / 180 degrees) with an EXIF Orientation tag saying how to turn them upright
 
 EVERYTHING here is SYNTHETIC (drawn by this script). It is for testing, not evidence of real-world accuracy.
 The teacher/room samples use the fake PLACEHOLDER course in data/catalog.json.
@@ -180,9 +182,28 @@ def main():
     cv2.imwrite(os.path.join(OUT, "timetable_teacher_room.png"), to_cv(timetable_teacher_room()))
     cv2.imwrite(os.path.join(OUT, "notice_teacher_room.png"), to_cv(notice_teacher_room()))
 
+    make_exif_variants(tt)
+
     make_pdfs()
     write_truth_files()
     print("samples written to", OUT)
+
+
+def save_with_exif(upright_bgr, path, orientation, rotate_code):
+    """Store the picture physically rotated, plus an EXIF Orientation tag that says how to turn it upright.
+    This is what phones do: the pixels are sideways, the tag tells viewers to rotate them back.
+    EXIF 6 = 'show rotated 90 degrees clockwise' (pixels stored rotated counter-clockwise),
+    EXIF 3 = 'show rotated 180 degrees'."""
+    stored = cv2.rotate(upright_bgr, rotate_code)
+    pil = Image.fromarray(cv2.cvtColor(stored, cv2.COLOR_BGR2RGB))
+    exif = Image.Exif()
+    exif[0x0112] = orientation          # 0x0112 = the EXIF "Orientation" field
+    pil.save(path, quality=92, exif=exif)
+
+
+def make_exif_variants(upright_bgr):
+    save_with_exif(upright_bgr, os.path.join(OUT, "timetable_exif6.jpg"), 6, cv2.ROTATE_90_COUNTERCLOCKWISE)
+    save_with_exif(upright_bgr, os.path.join(OUT, "timetable_exif3.jpg"), 3, cv2.ROTATE_180)
 
 
 NOTICE_LINES = [
@@ -247,6 +268,7 @@ def write_truth_files():
          "teacher": "Prof. Rahul Placeholder", "room": "R-204"},
     ]}
     for stem, truth in [("timetable", tt), ("timetable_skew", tt), ("notice", notice_truth),
+                        ("timetable_exif6", tt), ("timetable_exif3", tt),
                         ("notice_scanned", notice_truth), ("notice_text", notice_truth),
                         ("timetable_transposed", tt_transposed), ("timetable_teacher_room", detail),
                         ("notice_teacher_room", notice_tr)]:

@@ -14,6 +14,7 @@ An OpenCV image is just a numpy array of shape (height, width, 3) in BGR order.
 A "box" is [x1, y1, x2, y2] = left, top, right, bottom in pixels.
 """
 import difflib
+import io
 import os
 import re
 import time
@@ -21,6 +22,7 @@ from datetime import date, datetime, timedelta
 
 import cv2
 import numpy as np
+from PIL import Image, ImageOps
 
 from catalog import load_catalog, make_scope
 
@@ -69,10 +71,24 @@ def load_pages(data: bytes, filename: str, max_pages=3):
                 code = cv2.COLOR_RGBA2BGR if pix.n == 4 else cv2.COLOR_RGB2BGR
                 pages.append(cv2.cvtColor(img, code) if pix.n >= 3 else cv2.cvtColor(img, cv2.COLOR_GRAY2BGR))
         return pages
-    img = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
+    img = decode_image(data)
     if img is None:
         raise ValueError("Could not read this file as an image or PDF")
     return [img]
+
+
+def decode_image(data: bytes):
+    """Bytes -> upright BGR image.
+    Phones usually store a photo sideways and add an EXIF "Orientation" tag that says how to turn it
+    upright. Pillow's exif_transpose reads that tag and rotates the pixels, so the rest of the pipeline
+    always sees an upright picture. (Pictures that are physically rotated or upside-down WITHOUT such a
+    tag are not corrected: nothing in the file says so, and we do not guess.)"""
+    try:
+        pil = ImageOps.exif_transpose(Image.open(io.BytesIO(data))).convert("RGB")
+        return cv2.cvtColor(np.array(pil), cv2.COLOR_RGB2BGR)
+    except Exception:
+        # Pillow could not open it: let OpenCV try (it also applies EXIF orientation by itself)
+        return cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
 
 
 # --------------------------------------------------------------------------
