@@ -18,6 +18,7 @@
   const COLORS = { Zainab: "#5b4bc4", Aarav: "#1f7a4a", Meera: "#b8400c", Kabir: "#0e6f86" };
   const ME_KEY = "campussync.chat.me";   // sessionStorage: who THIS tab is chatting as (so two tabs can differ)
   const MAX_TEXT = 1000;
+  const MAX_TOPIC = 80;   // a note request's topic is a short text
 
   let data = null;       // { messages: [...], reads: { user: { conversation: lastReadTime } } }
   let me = USERS[0];     // current demo user in this tab
@@ -51,17 +52,46 @@
     return new Date(ts).toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" });
   }
 
+  // The subjects you can request notes for: the ones in the timetable the app is using right now
+  // (data.js, or the one Vision saved). "timetable" is the global from data.js / app.js.
+  function subjectList() {
+    const subjects = [];
+    try {
+      Object.values(timetable).forEach(day => day.forEach(l => {
+        if (l.subject && l.subject !== "Break" && !subjects.includes(l.subject)) subjects.push(l.subject);
+      }));
+    } catch (e) { /* no timetable: the form will say so */ }
+    return subjects;
+  }
+
+  const pad = n => String(n).padStart(2, "0");
+  const localDate = (d = new Date()) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;   // yyyy-mm-dd, local time
+  const validDate = v => /^\d{4}-\d{2}-\d{2}$/.test(v) && localDate(new Date(v + "T12:00:00")) === v;
+  const cleanTopic = v => String(v || "").replace(/\s+/g, " ").trim().slice(0, MAX_TOPIC);
+  const prettyDate = v => new Date(v + "T12:00:00").toLocaleDateString([], { weekday: "short", day: "numeric", month: "short", year: "numeric" });
+
+  // A request must be exactly {subject, date, topic, status, ...} with plain strings; anything else is not drawn.
+  const isRequest = m => m.type === "request" && m.request && ["subject", "date", "topic", "status"].every(k => typeof m.request[k] === "string");
+  const previewOf = m => m.type === "request" ? "📝 Note request: " + (m.request ? m.request.subject : "") : m.text;
+
   // ---------------------------------------------------------------- storage (uses store.js)
   function seedData() {
     const now = Date.now(), H = 3600 * 1000, D = 24 * H;
     const msg = (from, ago, text, c = "class") => ({ id: uid(), convo: c, from, ts: now - ago, type: "text", text });
     const zm = dmId("Zainab", "Meera"), ak = dmId("Aarav", "Kabir");
+    const subjects = subjectList();
+    const request = {   // one open note request from Meera, so the tab is not empty on first load
+      id: uid(), convo: "class", from: "Meera", ts: now - 1.5 * H, type: "request",
+      request: { subject: subjects.includes("DAA") ? "DAA" : (subjects[0] || "Subject"), date: localDate(new Date(now - D)),
+                 topic: "Second half of the lecture", status: "open" },
+    };
     return {
       version: 1,
       messages: [
         msg("Aarav", D + 3 * H, "Hi all! Is the DAA assignment still due this Friday?"),
         msg("Meera", D + 2.5 * H, "Yes, Friday. I'll post my notes once I've cleaned them up."),
         msg("Kabir", 3 * H, "Reminder: the Python lab starts at 10 tomorrow."),
+        request,
         msg("Zainab", 2 * H, "Thanks Kabir! I'll bring my laptop."),
         msg("Meera", 5 * H, "Are you free to go over the DAA assignment tonight?", zm),
         msg("Zainab", 4.5 * H, "Sure, 8pm works for me.", zm),
@@ -120,7 +150,7 @@
       const msgs = convoMessages(c.id), last = msgs[msgs.length - 1], unread = unreadCount(c.id);
       // in the group show who spoke; in a one-to-one only mark your own messages
       const who = last && last.from === me ? "You: " : (c.id === "class" && last ? last.from + ": " : "");
-      const preview = last ? who + last.text : "No messages yet";
+      const preview = last ? who + previewOf(last) : "No messages yet";
       const btn = el("button", { className: "chat-convo" + (c.id === convo ? " active" : ""), type: "button",
         "aria-current": c.id === convo ? "true" : "false" },
         el("span", { className: "chat-convo-top" },
@@ -148,7 +178,7 @@
       return;
     }
     let prevDay = "";
-    msgs.forEach(m => {
+    msgs.filter(m => m.type !== "request" || isRequest(m)).forEach(m => {
       if (dayKey(m.ts) !== prevDay) {
         prevDay = dayKey(m.ts);
         box.append(el("div", { className: "chat-day", text: dayLabel(m.ts) }));
@@ -158,6 +188,27 @@
     if (forceBottom || nearBottom) box.scrollTop = box.scrollHeight;
   }
 
+  // The card for a note request: Subject / Date / Topic, a status, and a button for everyone except the requester.
+  function renderRequest(m) {
+    const r = m.request;
+    const row = (label, value) => el("div", { className: "chat-req-row" }, el("dt", { text: label }), el("dd", { text: value }));
+    const shared = r.status === "shared";
+    const status = el("span", { className: "chat-status " + (shared ? "shared" : "open"), text: shared ? "Shared" : "Open" });
+    const foot = el("div", { className: "chat-req-foot" }, status);
+    if (shared) {
+      foot.append(el("span", { className: "chat-req-by", text: `by ${r.sharedBy} at ${timeOf(r.sharedAt)}` }));
+    } else if (m.from !== me) {
+      const btn = el("button", { type: "button", className: "chat-btn", text: "I have these notes",
+        "aria-label": `I have the notes for ${r.subject}, ${prettyDate(r.date)}` });
+      btn.addEventListener("click", () => shareNotes(m.id));
+      foot.append(btn);
+    }
+    return el("div", { className: "chat-request", role: "group", "aria-label": `Note request: ${r.subject}` },
+      el("div", { className: "chat-req-title", text: "📝 Note request" }),
+      el("dl", { className: "chat-req-list" }, row("Subject", r.subject), row("Date", prettyDate(r.date)), row("Topic", r.topic)),
+      foot);
+  }
+
   function renderMessage(m) {
     const mine = m.from === me;
     const avatar = el("span", { className: "chat-avatar", text: m.from[0], "aria-hidden": "true" });
@@ -165,7 +216,7 @@
     const head = el("div", { className: "chat-meta" },
       el("span", { className: "chat-from", text: mine ? "You" : m.from }),
       el("time", { text: timeOf(m.ts), datetime: new Date(m.ts).toISOString() }));
-    const body = el("div", { className: "chat-text", text: m.text });   // textContent: typed HTML stays plain text
+    const body = isRequest(m) ? renderRequest(m) : el("div", { className: "chat-text", text: m.text });   // textContent: typed HTML stays plain text
     return el("div", { className: "chat-msg" + (mine ? " mine" : "") }, avatar, el("div", { className: "chat-bubble" }, head, body));
   }
 
@@ -189,6 +240,71 @@
     ui.input.value = "";
     render(true);
     ui.input.focus();
+  }
+
+  // "I have these notes": only someone other than the requester, and only while the request is still open
+  function shareNotes(id) {
+    update(d => {
+      const m = d.messages.find(x => x.id === id);
+      if (m && isRequest(m) && m.request.status === "open" && m.from !== me) {
+        m.request.status = "shared";
+        m.request.sharedBy = me;
+        m.request.sharedAt = Date.now();
+      }
+    });
+    render(false);
+  }
+
+  // The request form has exactly three inputs: Subject, Date, Topic. Nothing else can be typed into a request.
+  function buildRequestDialog() {
+    ui.reqSubject = el("select", { id: "chat-req-subject", required: "" });
+    ui.reqDate = el("input", { id: "chat-req-date", type: "date", required: "" });
+    ui.reqTopic = el("input", { id: "chat-req-topic", type: "text", maxlength: String(MAX_TOPIC), required: "", placeholder: "e.g. Chapter 3, second half" });
+    ui.reqTarget = el("p", { className: "chat-req-target" });
+    ui.reqError = el("p", { className: "chat-req-error", role: "alert" });
+    const field = (label, input, id) => el("div", { className: "chat-field" }, el("label", { for: id, text: label }), input);
+    const cancel = el("button", { type: "button", className: "chat-btn", text: "Cancel" });
+    cancel.addEventListener("click", () => ui.dialog.close());
+    const form = el("form", { novalidate: "" },
+      el("h4", { text: "Request notes" }),
+      ui.reqTarget,
+      field("Subject", ui.reqSubject, "chat-req-subject"),
+      field("Date", ui.reqDate, "chat-req-date"),
+      field("Topic", ui.reqTopic, "chat-req-topic"),
+      ui.reqError,
+      el("div", { className: "chat-dialog-buttons" }, cancel, el("button", { type: "submit", className: "chat-btn primary", text: "Send request" })));
+    form.addEventListener("submit", e => { e.preventDefault(); submitRequest(); });
+    ui.dialog = el("dialog", { className: "chat-dialog", "aria-label": "Request notes" }, form);
+    ui.dialog.addEventListener("close", () => ui.requestBtn.focus());     // give focus back to the button that opened it
+    document.body.append(ui.dialog);
+  }
+
+  // prefill = {subject, date, topic} (all optional). The user always reviews and presses Send.
+  function openRequestForm(prefill) {
+    const subjects = subjectList();
+    ui.reqSubject.replaceChildren(el("option", { value: "", text: subjects.length ? "Choose a subject…" : "No subjects in the timetable" }),
+      ...subjects.map(sub => el("option", { value: sub, text: sub })));
+    const pre = prefill || {};
+    ui.reqSubject.value = subjects.includes(pre.subject) ? pre.subject : "";
+    ui.reqDate.value = validDate(pre.date) ? pre.date : localDate();     // defaults to today
+    ui.reqTopic.value = cleanTopic(pre.topic);
+    ui.reqError.textContent = "";
+    ui.reqTarget.textContent = "Sending to: " + ui.title.textContent;
+    ui.dialog.showModal();
+    (ui.reqSubject.value ? ui.reqTopic : ui.reqSubject).focus();
+  }
+
+  function submitRequest() {
+    const subject = ui.reqSubject.value, date = ui.reqDate.value, topic = cleanTopic(ui.reqTopic.value);
+    let problem = "", field = null;
+    if (!subjectList().includes(subject)) { problem = "Choose a subject."; field = ui.reqSubject; }
+    else if (!validDate(date)) { problem = "Choose a valid date."; field = ui.reqDate; }
+    else if (!topic) { problem = "Write a short topic."; field = ui.reqTopic; }
+    if (problem) { ui.reqError.textContent = problem; field.focus(); return; }
+    update(d => d.messages.push({ id: uid(), convo, from: me, ts: Date.now(), type: "request",
+      request: { subject, date, topic, status: "open" } }));
+    ui.dialog.close();
+    render(true);
   }
 
   function switchUser(name) {
@@ -249,8 +365,12 @@
       el("label", { for: "chat-input", className: "chat-sr", text: "Message" }), ui.input, sendBtn,
       el("span", { className: "chat-hint", text: "Enter to send · Shift+Enter for a new line" }));
 
+    ui.requestBtn = el("button", { type: "button", className: "chat-btn", text: "📝 Request notes" });
+    ui.requestBtn.addEventListener("click", () => openRequestForm());
+    buildRequestDialog();
+
     const pane = el("div", { className: "chat-pane" },
-      el("div", { className: "chat-pane-head" }, el("div", {}, ui.title, ui.subtitle)),
+      el("div", { className: "chat-pane-head" }, el("div", {}, ui.title, ui.subtitle), ui.requestBtn),
       ui.messages, composer);
 
     ui.section = el("section", { id: "chat", className: "tab hidden" },

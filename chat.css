@@ -80,3 +80,29 @@
   .chat-convos { max-height: 160px; border-right: 0; border-bottom: 1px solid #ccc; }
   .chat-messages { height: 320px; }
 }
+
+/* ---- note-request card */
+.chat-request { min-width: 240px; }
+.chat-req-title { font-weight: bold; margin-bottom: 4px; }
+.chat-req-list { margin: 0; }
+.chat-req-row { display: flex; gap: 8px; }
+.chat-req-row dt { flex: none; width: 62px; color: #444; font-weight: bold; }
+.chat-req-row dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.chat-req-foot { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.chat-status { padding: 1px 8px; border-radius: 10px; font-size: 13px; font-weight: bold; }
+.chat-status.open { background: #fff3cd; color: #6b4600; border: 1px solid #e0b84a; }
+.chat-status.shared { background: #d9f2e1; color: #14532d; border: 1px solid #7bc99a; }
+.chat-req-by { font-size: 13px; color: #333; }
+
+/* ---- request form (a <dialog>, so Esc closes it and focus stays inside) */
+.chat-dialog { font: 14px Arial, sans-serif; width: min(420px, 92vw); border: 1px solid #888; border-radius: 8px; padding: 16px; }
+.chat-dialog::backdrop { background: rgba(0, 0, 0, 0.4); }
+.chat-dialog h4 { margin: 0 0 6px; font-size: 16px; }
+.chat-req-target { margin: 0 0 10px; font-size: 13px; color: #444; }
+.chat-field { display: flex; flex-direction: column; gap: 3px; margin-bottom: 10px; }
+.chat-field label { font-weight: bold; }
+.chat-field select, .chat-field input { font: inherit; font-size: 14px; padding: 6px 8px; border: 1px solid #aaa; border-radius: 4px; }
+.chat-req-error { min-height: 18px; margin: 0 0 8px; color: #b00020; font-size: 13px; font-weight: bold; }
+.chat-dialog-buttons { display: flex; justify-content: flex-end; gap: 8px; }
+.chat-dialog .chat-btn { font-size: 14px; padding: 6px 12px; border: 1px solid #aaa; border-radius: 4px; background: #f3f3f3; cursor: pointer; }
+.chat-dialog .chat-btn.primary { background: #1a5fd0; border-color: #1a5fd0; color: #fff; }
