@@ -1,5 +1,14 @@
 let user = {};
-let attendance = {};
+let attendance = loadStore("attendance", {});
+
+// Load saved data (store.js). Vision writes to the same keys.
+announcements = loadStore("announcements", []);
+const savedTimetable = loadStore("timetable", null);
+if (savedTimetable) {
+  // timetable is a const in data.js, so replace its contents instead of the variable
+  Object.keys(timetable).forEach(day => delete timetable[day]);
+  Object.assign(timetable, savedTimetable);
+}
 let currentDate = new Date(2026, 1); // Feb 2026
 let currentUser = null;
 let currentRole = null;
@@ -147,6 +156,7 @@ function postAnnouncement() {
     msg: msg.value,
     by: currentRole
   });
+  saveStore("announcements", announcements);
   renderAnnouncements();
 }
 
@@ -166,6 +176,7 @@ function markAttendance(key) {
   } else if (choice === "A" || choice === "a") {
     attendance[key] = "absent";
   }
+  saveStore("attendance", attendance);
 
   renderCalendar();
     checkWarnings();
@@ -193,7 +204,10 @@ function showTab(id) {
     t.classList.add("hidden")
   );
   document.getElementById(id).classList.remove("hidden");
-  if (id === "announcements") renderAnnouncements(); // show the list when the tab opens, not only after posting
+  if (id === "announcements") {
+    announcements = loadStore("announcements", announcements); // pick up posts made from Vision
+    renderAnnouncements(); // show the list when the tab opens, not only after posting
+  }
 }
 
 function changeMonth(dir) {

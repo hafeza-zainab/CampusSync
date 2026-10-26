@@ -14,7 +14,7 @@ import os
 
 import cv2
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 import pipeline
@@ -83,6 +83,26 @@ def clear():
 @app.get("/")
 def index():
     return FileResponse(os.path.join(HERE, "static", "index.html"))
+
+
+# The attendance app (../index.html etc.) is served from the same server at /campus/, so it and
+# the Vision page share one origin = one localStorage (see ../store.js). Only these files are
+# served, so nothing else in the project folder (.git, data/, ...) is exposed.
+CAMPUS_DIR = os.path.dirname(HERE)
+CAMPUS_FILES = {"index.html", "app.js", "data.js", "store.js", "style.css", "studypanel.html", "chatbot.html"}
+
+
+@app.get("/campus")
+def campus_redirect():
+    return RedirectResponse("/campus/")
+
+
+@app.get("/campus/")
+@app.get("/campus/{name}")
+def campus(name: str = "index.html"):
+    if name not in CAMPUS_FILES:
+        raise HTTPException(404, "Not found")
+    return FileResponse(os.path.join(CAMPUS_DIR, name))
 
 
 app.mount("/samples", StaticFiles(directory=os.path.join(HERE, "samples")), name="samples")
