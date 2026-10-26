@@ -10,7 +10,7 @@ import re
 
 from playwright.sync_api import sync_playwright
 
-BASE = "http://localhost:8000"
+BASE = os.environ.get("CAMPUS_BASE", "http://localhost:8000")
 OUT = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "chat_screenshots")
 os.makedirs(OUT, exist_ok=True)
 ID = {"Zainab": "DEMO-CS-001", "Aarav": "DEMO-CS-002"}
