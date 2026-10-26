@@ -382,6 +382,13 @@
     document.querySelector(".tab-nav").append(navBtn);
   }
 
+  // Vision's "Request notes" link opens /campus/?chat=request&subject=..&date=..&topic=..
+  // The app shows its login first, so remember the values and open the (pre-filled) form right after login.
+  function readPrefill() {
+    const q = new URLSearchParams(location.search);
+    return q.get("chat") === "request" ? { subject: q.get("subject") || "", date: q.get("date") || "", topic: q.get("topic") || "" } : null;
+  }
+
   function init() {
     try { me = sessionStorage.getItem(ME_KEY) || USERS[0]; } catch (e) { me = USERS[0]; }
     if (!USERS.includes(me)) me = USERS[0];
@@ -398,6 +405,22 @@
       render(false);
     });
     document.addEventListener("visibilitychange", () => { if (chatShown()) render(true); });
+
+    // wrap login from app.js: if we arrived from Vision, open the Chat tab with the request form pre-filled.
+    // The form is only filled in; the user reviews it and presses Send (nothing is sent automatically).
+    let pending = readPrefill();
+    const originalLogin = window.login;
+    window.login = function () {
+      originalLogin();
+      if (pending && !document.getElementById("dashboard").classList.contains("hidden")) {
+        const prefill = pending;
+        pending = null;
+        history.replaceState(null, "", location.pathname);   // so a reload does not open the form again
+        window.showTab("chat");
+        openConvo("class");
+        openRequestForm(prefill);
+      }
+    };
 
     // wrap showTab from app.js: when the Chat tab opens, scroll to the newest message and mark it read
     const originalShowTab = window.showTab;

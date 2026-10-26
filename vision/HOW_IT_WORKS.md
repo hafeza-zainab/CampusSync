@@ -13,6 +13,7 @@ A picture is just a grid of numbers. OpenCV loads it as a numpy array: `img[y][x
 | `make_sample.py` | Draws fake (synthetic) test timetables/notices so you can test without real files. |
 | `tests/unit.py`, `tests/e2e.py` | Scripted checks: extraction rules, and the real pages in a headless browser. |
 | `../store.js` | Shared localStorage keys used by the attendance app and Vision (see "the bridge"). |
+| `../chat.js`, `../chat.css` | The Chat tab of the attendance app (see "The Chat tab"). |
 
 ## The pipeline, step by step
 1. **Load** (`load_pages`, `decode_image`). Images are opened with Pillow and `ImageOps.exif_transpose` turns them upright using their EXIF orientation tag (phones store photos sideways plus a tag; without this a portrait photo would arrive rotated). Images that are physically rotated or upside-down with **no** tag are not corrected and will fail. For PDFs, PyMuPDF renders each page (up to 3) to an image first, so a PDF becomes "just an image"; the PDF's own text layer is not used.
@@ -127,5 +128,30 @@ After a timetable upload the page shows card 4. How it works:
 
 ## Tests (what backs the claims in the README)
 - `py tests/unit.py` (no server needed): 44 checks of the extraction rules: which room/teacher/date patterns are recognised, which are *not*, what the fuzzy match accepts and rejects, the confidence formula, and the eval helpers.
-- `py tests/e2e.py` (server running): 50 checks that drive the real pages in headless Chromium: the demo flow, announcements (editing, confidence flag, duplicates), catalog dropdowns and chips, the attendance app fixes, and timetable → attendance (preview, warning, confirm, undo). It also checks that the page makes no requests outside `localhost`. It uses the synthetic images; run `make_sample.py` first.
+- `py tests/e2e.py` (server running): 103 checks that drive the real pages in headless Chromium: the demo flow, announcements (editing, confidence flag, duplicates), catalog dropdowns and chips, the attendance app fixes, timetable → attendance (preview, warning, confirm, undo), and the Chat tab (messages, one-to-one, note requests, two-tab sync, quality bar at 1920x1080 and 1366x768, Vision prefill). It also checks that the page makes no requests outside `localhost`. It uses the synthetic images; run `make_sample.py` first.
 - Run both after **any** code change. Neither tests real student images, handwriting, or browsers other than Chromium.
+
+## The Chat tab (`../chat.js`, `../chat.css`)
+**What it is, honestly:** a front-end demo chat inside the attendance app. The "users" are four **demo users** (Zainab, Aarav, Meera, Kabir) picked from a "Chatting as" box, all in **one browser**. There is no server and no accounts, so it is **not** real-time multi-user chat. Two tabs of the same browser stay in sync, which is what makes the demo work.
+
+**How it hooks in without editing your files:** `index.html` has one added line, `<script src="chat.js"></script>`. `chat.js` then builds its own nav button, its own tab section and its own stylesheet link, and wraps `showTab()` and `login()` from `app.js`. `app.js`, `style.css` and `data.js` are untouched.
+
+**Data** (`store.js` key `chat`, stored under `campussync.chat`):
+```
+{ messages: [ {id, convo, from, ts, type: "text", text}
+            | {id, convo, from, ts, type: "request", request: {subject, date, topic, status: "open"|"shared", sharedBy?, sharedAt?}} ],
+  reads: { "<user>": { "<convo>": <time of the newest message that user has seen> } } }
+```
+- `convo` is `"class"` for the group, or `"dm:A|B"` (names sorted) for one-to-one chats, so both users compute the same id.
+- Unread = messages from other people newer than `reads[me][convo]`. Opening a conversation updates `reads` (only when something new was read, so two tabs cannot loop).
+- Every change re-reads the newest saved data, changes it, and saves (`update()`), so a message from another tab is not overwritten.
+- "Who am I" is kept per tab in `sessionStorage`, which is how two tabs can be two different users.
+- Two tabs sync through the browser's `storage` event; the open conversation is redrawn and the composer text is left alone.
+
+**Safety:** message text, names, subjects and topics are added to the page with `textContent` only (the `el()` helper), never `innerHTML`, so typed HTML shows as text. A request is accepted for display only if subject/date/topic/status are plain strings. Input is trimmed, empty messages are ignored, messages are limited to 1000 characters and topics to 80. There are no `alert()`/`confirm()` popups: errors are inline and "Reset chat" needs two clicks.
+
+**Note request:** the form is a `<dialog>` with exactly three inputs: Subject (the subjects in the timetable the app is using, from `data.js` or the one Vision saved), Date (defaults to today) and Topic. Sending posts a request card into the open conversation. Anyone except the requester sees "I have these notes"; pressing it sets the status to Shared with their name and the time, and the requester's tab updates through the storage event. Nothing else can be typed into a request.
+
+**Prefill from Vision:** the Vision page's lecture rows have a "Request notes" link (invisible until hover or keyboard focus, and positioned so it does not change the layout). It opens `/campus/?chat=request&subject=..&date=..&topic=..`. The app shows its normal login first; after login `chat.js` opens the Chat tab with the form filled in (date = the most recent occurrence of that weekday). The user reviews it and presses Send; nothing is sent automatically. If the subject is not in the app's timetable, the Subject box is left empty for the user to choose.
+
+**Seed data and reset:** on first load there are a few example messages, one open note request and one direct conversation, so the tab is not empty. "Reset chat" restores exactly that seed data. Message times are relative to when the data was first created.

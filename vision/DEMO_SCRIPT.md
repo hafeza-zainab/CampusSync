@@ -20,5 +20,6 @@ Optional extra 10 seconds (only if you show it on screen): scroll to card 4 and 
 **Tips**
 - Timing, measured once: from clicking *Run demo* to the "6 · Auto-tagged" caption took about 6.5 s on the author's PC. The rest of the 60 s is you holding on screens; hold ~1 s longer on each stage or speed up the take in the editor.
 - After a timetable upload a card "4 · Add this timetable to the attendance app" appears at the bottom. For a vision-only demo, do not scroll down to it.
+- Keep the mouse off the lecture rows in the Study Panel: a small "Request notes" link (for the chat) appears when you hover a row.
 - Pause 1 second on the filled Study Panel at the end.
 - If a take goes wrong: *Reset panel*, run again. Within the same course and semester, entries with the same subject, date and topic are not saved twice.

@@ -326,6 +326,44 @@ def test_chat(b):
     ctx.close()
 
 
+def test_chat_prefill(b):
+    """Vision's 'Request notes' link on a lecture row pre-fills the chat's request form. It never sends."""
+    errs, dialogs = [], []
+    ctx = b.new_context(viewport={"width": 1400, "height": 1000})
+    v = ctx.new_page()
+    v.on("pageerror", lambda e: errs.append(str(e)[:100]))
+    v.goto(BASE + "/"); v.click("#clear")
+    v.set_input_files("#file", os.path.join(S, "timetable.png")); wait_done(v)
+    check("prefill: every lecture row has a 'Request notes' link", v.locator(".req-notes").count() == v.locator(".entry").count() == 11)
+    check("prefill: the link is invisible until hover/focus", v.evaluate("getComputedStyle(document.querySelector('.req-notes')).opacity") == "0")
+    with_links = v.evaluate("document.getElementById('panel').offsetHeight")
+    v.evaluate("document.querySelectorAll('.req-notes').forEach(e => e.remove())")
+    check("prefill: the links do not change the Study Panel layout (same height with and without)", with_links == v.evaluate("document.getElementById('panel').offsetHeight"), f"{with_links}px")
+    v.reload(); v.wait_for_timeout(800)
+    row = v.locator(".subject", has_text="Hindi").locator(".entry").first
+    row.hover()
+    check("prefill: the link shows on hover", v.evaluate("getComputedStyle(document.querySelector('.entry:hover .req-notes')).opacity") == "1")
+    with ctx.expect_page() as popup:
+        row.locator(".req-notes").click()
+    c = popup.value
+    c.on("pageerror", lambda e: errs.append(str(e)[:100]))
+    c.on("dialog", lambda d: (dialogs.append(d.message), d.accept()))
+    c.wait_for_load_state()
+    check("prefill: the campus app still shows its login first", c.locator("#loginBox").is_visible())
+    c.fill("#username", "Zainab"); c.click("text=Enter")
+    dlg = c.locator("dialog.chat-dialog")
+    check("prefill: after login the Chat tab opens with the request form", c.locator("#chat").is_visible() and dlg.is_visible())
+    check("prefill: subject and topic are filled from the lecture", c.input_value("#chat-req-subject") == "Hindi" and c.input_value("#chat-req-topic") == "Monday 07-08 lecture")
+    date = datetime.date.fromisoformat(c.input_value("#chat-req-date"))
+    check("prefill: the date is the most recent Monday (on or before today)", date.weekday() == 0 and date <= datetime.date.today() and (datetime.date.today() - date).days < 7, str(date))
+    check("prefill: nothing was sent automatically", c.locator(".chat-request").count() == 1)       # the single seeded request
+    c.click("text=Send request")
+    check("prefill: it is sent only after the user presses Send", c.locator(".chat-request").count() == 2)
+    check("prefill: the URL is cleaned so a reload does not reopen the form", "chat=request" not in c.url)
+    check("prefill: no page errors or popups", not errs and not dialogs, str(errs + dialogs))
+    ctx.close()
+
+
 def main():
     try:
         api("/api/entries")
@@ -334,7 +372,7 @@ def main():
     api("/api/entries", "DELETE")
     with sync_playwright() as p:
         b = p.chromium.launch()
-        for test in (test_api, test_demo_flow, test_announcements, test_catalog, test_attendance_bridge, test_chat):
+        for test in (test_api, test_demo_flow, test_announcements, test_catalog, test_attendance_bridge, test_chat, test_chat_prefill):
             print(f"\n== {test.__name__}")
             try:
                 test(b)

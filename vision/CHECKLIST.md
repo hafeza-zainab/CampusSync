@@ -14,7 +14,7 @@
 
 **3. Run the tests** (with the server running; the e2e run resets the saved entries)
 - `py tests/unit.py` → expect `44/44 checks passed`
-- `py tests/e2e.py` → expect `50/50 checks passed`
+- `py tests/e2e.py` → expect `103/103 checks passed`
 - If either fails, don't record. Tell me which line failed.
 
 **4. Edit `data/catalog.json`** (reload the page afterwards; no server restart needed)
@@ -27,6 +27,7 @@
 **5. Reset state**
 - Vision page: click **Reset panel** (empties `data/entries.json`).
 - Browser storage (announcements, timetable, attendance marks live here): record in a fresh **Incognito/Private window**, or clear site data for `localhost:8000` (DevTools → Application → Storage → Clear site data).
+- Chat: open the Chat tab and click **Reset chat** twice (restores the seeded demo messages; it is stored in the same browser storage, so a fresh Incognito window already starts clean).
 - Re-check the Study Panel is empty and the Course/Semester dropdowns show "— not selected —".
 
 **6. Screen setup**
@@ -50,6 +51,9 @@
 | Click **Replace timetable** with a placeholder course selected, on a browser profile you care about | It replaces the timetable the attendance app uses (Undo restores it; marks for lectures not in the new timetable are hidden until you Undo). |
 | Open the app from a file / Live Server | Different origin, so Vision's data won't appear. |
 | Leave old uploads in place | Entries and announcements persist (server file + browser storage) until you reset them (step 5). |
+| Call the chat "real-time multi-user chat" | It is four simulated demo users in one browser, no server (the page says so). Show it with two tabs and say "simulated users". |
+| Rely on chat message times looking "live" | Seeded messages are timestamped relative to when the data was first created. Click Reset chat right before recording. |
+| Hover over Vision's lecture rows while recording the vision-only demo | A small "Request notes" link appears on hover. Keep the mouse off the rows. |
 | Claim accuracy numbers | The only numbers are from synthetic images. Say "tested on synthetic images; real-image accuracy is being measured". |
 
 ## C. If something goes wrong on the day

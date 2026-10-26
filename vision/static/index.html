@@ -40,6 +40,11 @@
   .subject > div:first-child span { color:var(--dim); font-weight:400; }
   .entry { padding:8px 12px; border-top:1px solid var(--line); display:flex; flex-wrap:wrap; gap:6px 10px; align-items:center; }
   .entry.new { animation: pop .7s ease; background:#2ee6a614; }
+  /* "Request notes" link on lecture rows: invisible until you hover the row or tab to the link, and
+     positioned absolutely so it never changes the row layout (the recorded demo looks the same) */
+  .entry { position:relative; }
+  .req-notes { position:absolute; right:10px; top:8px; font-size:13px; color:var(--blue); opacity:0; text-decoration:underline; }
+  .entry:hover .req-notes, .req-notes:focus { opacity:1; }
   @keyframes pop { from { transform:translateX(24px); opacity:0; background:#2ee6a655; } to { transform:none; opacity:1; } }
   .chip { font-size:12px; padding:2px 9px; border-radius:99px; background:#232846; color:var(--dim); }
   .chip.date { color:var(--amber); } .chip.task { color:var(--pink); } .chip.sem { color:var(--blue); }
@@ -263,6 +268,23 @@ function confChip(e) {
   return `<span class="chip ${low ? 'warn' : ''}">${Math.round(e.confidence * 100)}% sure${low ? ' · check this' : ''}</span>`;
 }
 
+// The most recent date (today or earlier) that falls on this weekday: the day the lecture actually happened.
+function lastOccurrence(dayName, fallback) {
+  const idx = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].indexOf(dayName);
+  if (idx < 0) return fallback;
+  const d = new Date();
+  d.setDate(d.getDate() - ((d.getDay() - idx + 7) % 7));
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// A link to the campus app's Chat tab. It only PRE-FILLS the request form (subject, date, topic);
+// the user reviews it there and presses Send. Nothing is ever sent from this page.
+function requestNotesLink(e) {
+  const params = new URLSearchParams({ chat: 'request', subject: e.subject, date: lastOccurrence(e.day, e.date), topic: String(e.topic || '').slice(0, 80) });
+  return `<a class="req-notes" href="/campus/?${esc(params.toString())}" target="_blank" rel="noopener"
+             aria-label="Request notes for ${esc(e.subject)} in the campus chat (opens the chat form, nothing is sent)">Request notes</a>`;
+}
+
 function entryKey(e) { return [e.course, e.semester, e.subject, e.date, e.topic].join('|'); }
 
 function renderPanel(entries, fresh = new Set()) {
@@ -286,7 +308,7 @@ function renderPanel(entries, fresh = new Set()) {
           html += `<div class="entry ${fresh.has(entryKey(e)) ? 'new' : ''}">
             <span class="chip date">${esc(e.date)}</span><span class="chip task">${esc(e.task)}</span>
             ${confChip(e)}${entryChips(e)}
-            <span class="topic">${esc(e.topic)}</span></div>`;
+            <span class="topic">${esc(e.topic)}</span>${e.kind === 'lecture' ? requestNotesLink(e) : ''}</div>`;
         }
         html += '</div>';
       }

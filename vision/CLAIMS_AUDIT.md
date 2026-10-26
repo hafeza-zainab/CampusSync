@@ -1,6 +1,6 @@
 # Claims audit: README.md, HOW_IT_WORKS.md, DEMO_SCRIPT.md
 
-Evidence key: **U** = `tests/unit.py` (44 checks) · **E** = `tests/e2e.py` (50 browser checks) · **V** = `eval_results_samples.md` (`py eval.py --dir samples`, synthetic) · **M** = `tests/measure.py` (printed measurements) · **code** = the cited function.
+Evidence key: **U** = `tests/unit.py` (44 checks) · **E** = `tests/e2e.py` (103 browser checks) · **V** = `eval_results_samples.md` (`py eval.py --dir samples`, synthetic) · **M** = `tests/measure.py` (printed measurements) · **code** = the cited function.
 "Synthetic" = images drawn by `make_sample.py`. **Nothing here is evidence about real student images.**
 
 Status: **backed** = evidence exists and matches · **softened** = wording changed to match the evidence · **removed** = no evidence, claim deleted · **flag** = depends on facts only the author can confirm.
@@ -23,7 +23,7 @@ Status: **backed** = evidence exists and matches · **softened** = wording chang
 | 12 | Timetable → attendance: preview, hidden-mark warning, confirm, never edits attendance, Undo | E (7 checks) | backed |
 | 13 | Fixes to the attendance app (time format, month buttons, "by undefined", persistence) | E (marking works, month buttons, role shown, marks survive reload) | backed |
 | 14 | App must be opened via `/campus/` | M §7: the same app from `file://` sees `None` | backed |
-| 15 | Chat template not implemented; `chatbot.html` stub calls missing function | code: `chatbot.html`, `grep handleResponse` | backed |
+| 15 | (was) Chat template not implemented; `chatbot.html` stub calls missing function | superseded: the Chat tab was built (rows C1-C14 below); the stub was replaced and E checks `handleResponse` is gone | updated |
 | 16 | `studypanel.html` posts to `/upload` which does not exist; not linked | code: `grep studypanel index.html` finds nothing; no `/upload` route in `main.py` | backed |
 | 17 | Dashboard Study Panel tab "calls a render function pointing at a missing element" | code: `renderMaterials()` targets `#materials`, page has `#materialsList`, and nothing calls it on tab open | **corrected** (the old wording said the tab calls it) |
 | 18 | `checkWarnings()` throws `subjectCount is not defined` | observed in every browser run; E whitelists exactly this error | backed |
@@ -99,3 +99,22 @@ Status: **backed** = evidence exists and matches · **softened** = wording chang
 ## Claims that depend on you (flag)
 - Anything about your own experience (why you built it) is yours to write; I removed the numbers I had invented.
 - The `main` course name, semester id (`sem4`), teachers and rooms in `data/catalog.json` are placeholders or guesses until you edit them.
+
+## Chat tab (added later; README "Chat tab" bullet, HOW_IT_WORKS "The Chat tab")
+
+| # | Claim | Evidence | Status |
+|---|---|---|---|
+| C1 | Class group + one-to-one chats, last-message preview, unread counts | E `test_chat` (conversation list, badge 2 on Meera, cleared on open, privacy: Aarav cannot see Zainab/Meera) | backed |
+| C2 | Enter sends, Shift+Enter new line, empty ignored, newest message in view | E | backed |
+| C3 | Typed HTML cannot break the page (textContent) | E: `<b>`/`<img onerror>` shown as text, no elements created, `window.__pwned` unset. Not a security audit: only HTML in message/topic text was tried | backed (narrowly) |
+| C4 | Note request form has only Subject, Date, Topic | E: the dialog contains exactly select + date + text inputs | backed |
+| C5 | Date defaults to today; topic required and max 80; subjects from the timetable | E | backed |
+| C6 | Request card Open → Shared with name and time, requester sees it live, third user sees Shared, requester has no button | E (3 tabs) | backed |
+| C7 | Two tabs of one browser stay in sync (storage event) | E (message, unread badge, request status) | backed |
+| C8 | **"Real-time multi-user chat"** | none: users are simulated, one browser, no server | **not claimed**; README states "simulated users in one browser, no server sync" |
+| C9 | Messages persist and Reset chat restores seed data (two clicks, no popup) | E | backed |
+| C10 | No alert()/confirm() popups in the chat | E (dialog listener across the whole chat test) | backed |
+| C11 | Readable at 1920x1080 and 1366x768: no horizontal scroll, no chat text under 13px, composer inside the screen, visible focus outline | E (both sizes; Tab from the message box reaches Send with a 3px outline) | backed. Not tested: other sizes, zoom levels, screen readers (labels and roles were added but never tried with one) |
+| C12 | Vision "Request notes" link pre-fills the form, requires normal login first, never sends | E `test_chat_prefill` (11 checks) | backed |
+| C13 | The link does not change the Vision page layout or the recorded demo | E: Study Panel height identical with and without the links (1223 px); link has opacity 0 until hover/focus | backed (appearance on hover only) |
+| C14 | `app.js`, `style.css`, `data.js` not edited; `index.html` has one added line | `git diff vision-integrations chat-tab -- app.js style.css data.js index.html` | backed |

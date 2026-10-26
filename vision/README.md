@@ -14,17 +14,19 @@ Re-typing a timetable and a list of deadlines into separate tools every semester
 4. **Course catalog**: pick a course and semester and only that semester's subjects are searched (`data/catalog.json`: courses → semesters → subjects → teacher/room).
 
 ## CampusSync as a whole, and where Vision fits
-CampusSync is a college project with attendance tracking, announcements, and a Study Panel and structured chat that are still in progress. Vision is meant to remove manual data entry for the parts that work.
+CampusSync is a college project with attendance tracking, announcements and a demo chat; its Study Panel is still in progress. Vision is meant to remove manual data entry for the parts that work.
 
-**Implemented and tested.** "Tested" means the scripted checks in [`tests/`](tests) pass: 44 unit checks (`tests/unit.py`) and 50 headless-Chromium checks (`tests/e2e.py`), run on synthetic images and a scripted attendance app. They have not been run on real student data.
+**Implemented and tested.** "Tested" means the scripted checks in [`tests/`](tests) pass: 44 unit checks (`tests/unit.py`) and 103 headless-Chromium checks (`tests/e2e.py`), run on synthetic images and a scripted attendance app. They have not been run on real student data.
 - **Vision pipeline**: upload, EXIF/tilt correction, table detection, OCR, extraction, tagging, and a per-field accuracy tool (`eval.py`).
 - **Post as announcement**: notice entries can be edited, are flagged "check this" under 80% confidence, and are posted into the attendance app's Announcements tab. Duplicates (same subject + date + topic) are blocked.
 - **Timetable → attendance**: a parsed timetable can replace the lecture timetable in the attendance app after a preview (lectures added / removed, lectures per week per subject, a warning for marks that would be hidden) and a confirm click. Marked attendance is never edited. Undo restores the old timetable.
 - **Fixes to the attendance app needed for the above**: lecture times like `07-08` could not be parsed (so attendance could not be marked), the month buttons called functions that did not exist, announcements showed "by undefined", and nothing was saved between page loads (announcements, timetable and attendance now persist in localStorage).
+- **Chat tab** (in the attendance app, `chat.js`): class group chat and one-to-one chats with last-message preview and unread counts; a **note-request** form with only three inputs (Subject from the timetable, Date, Topic) that posts a request card (Open / Shared; another user presses "I have these notes"); messages saved in localStorage and two tabs of the same browser stay in sync. The lecture rows on the Vision page have a "Request notes" link (visible on hover) that opens this form pre-filled; the user reviews it and presses Send, nothing is sent automatically.
+  **Limitation: the chat uses simulated users in one browser, with no server sync.** The "users" are four demo users (Zainab, Aarav, Meera, Kabir) chosen from a "Chatting as" box; there are no accounts, no server and no messages between different computers or browsers. It is **not** real-time multi-user chat. The old `chatbot.html` stub was replaced by a page pointing to the Chat tab.
 - The attendance app must be opened through the Vision server (`http://localhost:8000/campus/`); that is how the two share data.
 
 **In progress / future work (not built, or not working):**
-- **Structured class chat / note-request template**: planned, not implemented. `chatbot.html` is a stub whose buttons call a function that does not exist.
+- **Real chat**: accounts, a server, and messages between real users are not built (see the limitation above).
 - **The attendance app's own Study Panel**: `studypanel.html` is a form that posts to `/upload`, which does not exist, and nothing links to it. The Study Panel tab in the dashboard shows an empty list (its render function `renderMaterials()` targets an element id that does not exist and nothing calls it). The "Study Panel" that Vision fills is the list on the Vision page, stored in `data/entries.json`; it is **not** connected to the attendance app's Study Panel.
 - `checkWarnings()` (the "below 75%" alert in the attendance app) throws `subjectCount is not defined` after marking attendance; marking still works.
 - Handwriting, SAM-style segmentation for tables without lines, and an LLM extraction pass are not built.
@@ -95,6 +97,7 @@ python make_sample.py                  # creates samples/ (synthetic test images
 python -m uvicorn main:app --port 8000
 # open http://localhost:8000 and click "Run demo"
 ```
+Chat screenshots (demo users, seeded messages) are in [`../chat_screenshots/`](../chat_screenshots), made by `py tests/chat_screenshots.py`.
 Tests (with the server running): `py tests/unit.py`, `py tests/measure.py` (prints the measurements behind the limitations), and `py tests/e2e.py` (needs `pip install playwright` and `python -m playwright install chromium`). Accuracy tool: `py eval.py --dir samples` (synthetic) or `py eval.py` (your images in `real_samples/`).
 Code walkthrough: [HOW_IT_WORKS.md](HOW_IT_WORKS.md) · Demo recording plan: [DEMO_SCRIPT.md](DEMO_SCRIPT.md) · Claim-by-claim evidence: [CLAIMS_AUDIT.md](CLAIMS_AUDIT.md)
 
