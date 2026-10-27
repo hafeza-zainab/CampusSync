@@ -47,6 +47,7 @@ All commands are run from this folder (Windows; `py` is the Python launcher).
 | **Unit tests** (45 checks, includes "runs on OpenCV 5"; no server needed) | `cd vision` then `py tests/unit.py` |
 | **Accuracy tool** on the synthetic images (12 images) | `cd vision` then `py eval.py --dir samples` |
 | **Browser smoke test** (16 checks; server must be running) | `py -m pip install -r vision/requirements-dev.txt`, `py -m playwright install chromium`, then `cd vision` and `py tests/smoke_app.py` |
+| **Server rules** (upload limits and file types; 19 checks; starts its own server, no browser) | `cd vision` then `py tests/api_checks.py` |
 | **Full browser suite** (168 checks + 2 known unfixed bugs; server must be running) | `cd vision` then `py tests/e2e.py` (one part only: `py tests/e2e.py test_chat`) |
 | **Demo walkthrough** (9 checks, prints step timings; server must be running) | `cd vision` then `py tests/demo_walkthrough.py` |
 

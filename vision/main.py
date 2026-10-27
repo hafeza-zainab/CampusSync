@@ -5,15 +5,17 @@ Open:  http://localhost:8000
 
 Endpoints
   GET    /api/catalog   courses / semesters / subjects (data/catalog.json)
-  POST   /api/analyze   upload image/PDF (+ optional course, semester) -> detections + entries, auto-saved
+  POST   /api/analyze   upload PNG/JPG/PDF, max 10 MB / 10 PDF pages (+ optional course, semester) -> detections + entries, auto-saved
   GET    /api/entries   everything saved so far (the Study Panel reads this)
   DELETE /api/entries   clear all (handy before re-recording the demo)
 """
 import base64
+import io
 import json
 import os
 
 import cv2
+from PIL import Image
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -22,10 +24,57 @@ import catalog
 import pipeline
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-STORE = os.path.join(HERE, "data", "entries.json")
+STORE = os.environ.get("CAMPUS_STORE") or os.path.join(HERE, "data", "entries.json")   # CAMPUS_STORE: tests / Docker volume
 os.makedirs(os.path.dirname(STORE), exist_ok=True)
 
 app = FastAPI(title="CampusSync Vision")
+
+# Limits for /api/analyze (override with environment variables if needed)
+MAX_UPLOAD_BYTES = int(os.environ.get("CAMPUS_MAX_UPLOAD_BYTES", 10 * 1024 * 1024))   # 10 MB
+MAX_PDF_PAGES = int(os.environ.get("CAMPUS_MAX_PDF_PAGES", 10))
+MAX_IMAGE_PIXELS = int(os.environ.get("CAMPUS_MAX_IMAGE_PIXELS", 40_000_000))         # e.g. 8000 x 5000
+ALLOWED_EXTENSIONS = {".png", ".jpg", ".jpeg", ".pdf"}
+
+
+def sniff_type(data: bytes):
+    """What the bytes really are (the file name can lie): 'png', 'jpg', 'pdf' or None."""
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "png"
+    if data.startswith(b"\xff\xd8\xff"):
+        return "jpg"
+    if data.startswith(b"%PDF-"):
+        return "pdf"
+    return None
+
+
+def validate_upload(data: bytes, filename: str):
+    """Reject anything that is not a reasonably sized PNG / JPG / PDF, with a message the user can act on."""
+    if not data:
+        raise HTTPException(400, "The file is empty.")
+    ext = os.path.splitext(filename.lower())[1]
+    if ext not in ALLOWED_EXTENSIONS:
+        raise HTTPException(415, f"Unsupported file type '{ext or 'none'}'. Upload a PNG, JPG or PDF.")
+    kind = sniff_type(data)
+    if kind is None:
+        raise HTTPException(415, "The file content is not a PNG, JPG or PDF (it may have been renamed). Upload a PNG, JPG or PDF.")
+    if {"png": ".png", "jpg": ".jpg", "pdf": ".pdf"}[kind] != (".jpg" if ext == ".jpeg" else ext):
+        raise HTTPException(415, f"The file name says '{ext}' but the content is a {kind.upper()}. Rename it or upload the original file.")
+    if kind == "pdf":
+        import pymupdf
+        try:
+            with pymupdf.open(stream=data, filetype="pdf") as doc:
+                pages = doc.page_count
+        except Exception:
+            raise HTTPException(400, "Could not read this PDF (it may be damaged or password-protected).")
+        if pages > MAX_PDF_PAGES:
+            raise HTTPException(413, f"This PDF has {pages} pages; the limit is {MAX_PDF_PAGES}.")
+    else:
+        try:
+            w, h = Image.open(io.BytesIO(data)).size       # reads only the header
+        except Exception:
+            raise HTTPException(400, "Could not read this file as an image.")
+        if w * h > MAX_IMAGE_PIXELS:
+            raise HTTPException(413, f"This image is {w}x{h} pixels; the limit is {MAX_IMAGE_PIXELS // 1_000_000} million pixels.")
 
 
 def load_entries():
@@ -43,9 +92,10 @@ def save_entries(entries):
 
 @app.post("/api/analyze")
 async def analyze(file: UploadFile = File(...), course: str = Form(""), semester: str = Form("")):
-    data = await file.read()
-    if len(data) > 15_000_000:
-        raise HTTPException(413, "File too large (15 MB max)")
+    data = await file.read(MAX_UPLOAD_BYTES + 1)         # never hold more than the limit (+1 byte to detect "over") in memory
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(413, f"File too large (limit {MAX_UPLOAD_BYTES // (1024 * 1024)} MB).")
+    validate_upload(data, file.filename or "upload")
     try:
         result = pipeline.analyze(data, file.filename or "upload", semester=semester, course=course)
     except ValueError as e:
