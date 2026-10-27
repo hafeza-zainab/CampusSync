@@ -2,10 +2,11 @@
 /health and the request log).
 
     py tests/api_checks.py                 (from the vision folder; starts its own server on a spare port)
-    CAMPUS_BASE=http://localhost:8000 py tests/api_checks.py     (use a server that is already running instead:
-                                                                  Docker, EC2, ...; the log checks are skipped then)
+    CAMPUS_BASE=http://localhost:8000 CAMPUS_ADMIN_TOKEN=<its token> py tests/api_checks.py
+                                       (use a server that is already running instead: Docker, EC2, ...; it WILL delete that
+                                        server's saved entries, and the 'no token configured' checks are skipped)
 
-When it starts its own server it uses a temporary entries file, a known admin token and a temporary log file, so it never
+When it starts its own server it uses a temporary entries file and a known admin token, so it never
 touches data/entries.json. Only standard-library modules plus the project's own dependencies are used (no httpx / requests).
 """
 import io
@@ -36,36 +37,41 @@ def check(name, ok, detail=""):
 
 
 # ---- server: use CAMPUS_BASE, or start our own -------------------------------------------------------------------
-TOKEN = "test-admin-token"
+TOKEN = os.environ.get("CAMPUS_ADMIN_TOKEN") or "test-admin-token"      # for an external server, pass its token in CAMPUS_ADMIN_TOKEN
 tmp = tempfile.TemporaryDirectory()
 STORE = os.path.join(tmp.name, "entries.json")
-server = None
-BASE = os.environ.get("CAMPUS_BASE")
-if not BASE:
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        port = s.getsockname()[1]
-    BASE = f"http://127.0.0.1:{port}"
-    env = dict(os.environ, CAMPUS_STORE=STORE, CAMPUS_ADMIN_TOKEN=TOKEN)
-    server = subprocess.Popen([sys.executable, "-m", "uvicorn", "main:app", "--port", str(port), "--log-level", "warning"],
-                              cwd=VISION, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+servers = []
+
+
+def start_server(env_extra, store):
+    """Start uvicorn on a free port with the given environment; return its base URL."""
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+    env = {k: v for k, v in os.environ.items() if k != "CAMPUS_ADMIN_TOKEN"}
+    env.update(env_extra, CAMPUS_STORE=store)
+    proc = subprocess.Popen([sys.executable, "-m", "uvicorn", "main:app", "--port", str(port), "--log-level", "warning"],
+                            cwd=VISION, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    servers.append(proc)
+    url = f"http://127.0.0.1:{port}"
     for _ in range(120):
         try:
-            urllib.request.urlopen(BASE + "/api/catalog", timeout=2).read()
-            break
+            urllib.request.urlopen(url + "/api/catalog", timeout=2).read()
+            return url
         except Exception:
-            if server.poll() is not None:
-                sys.exit("server did not start:\n" + server.stdout.read().decode(errors="replace"))
+            if proc.poll() is not None:
+                sys.exit("server did not start:\n" + proc.stdout.read().decode(errors="replace"))
             time.sleep(1)
-    else:
-        server.kill()
-        sys.exit("server did not start in 120 s")
-OWN_SERVER = server is not None
+    sys.exit("server did not start in 120 s")
 
 
-def http(method, path, data=None, headers=None):
+OWN_SERVER = not os.environ.get("CAMPUS_BASE")
+BASE = os.environ.get("CAMPUS_BASE") or start_server({"CAMPUS_ADMIN_TOKEN": TOKEN}, STORE)
+
+
+def http(method, path, data=None, headers=None, base=None):
     """Return (status, parsed JSON or text). Non-2xx answers are returned, not raised."""
-    req = urllib.request.Request(BASE + path, data=data, method=method, headers=headers or {})
+    req = urllib.request.Request((base or BASE) + path, data=data, method=method, headers=headers or {})
     try:
         with urllib.request.urlopen(req, timeout=120) as r:
             body, status = r.read(), r.status
@@ -162,13 +168,40 @@ try:
     check("a valid PDF is accepted and read (timetable, 11 entries)", r[0] == 200 and len(r[1]["entries"]) == 11, f"{r[0]} {str(r[1])[:120]}")
     r = post("timetable_exif6.jpg", sample("timetable_exif6.jpg"))
     check("a valid JPG is accepted and read (11 entries)", r[0] == 200 and len(r[1]["entries"]) == 11, f"{r[0]} {str(r[1])[:120]}")
+    print("== admin token (DELETE /api/entries)")
+    before = http("GET", "/api/entries")[1]
+    check("setup: there are saved entries to protect", isinstance(before, list) and len(before) > 0, str(before)[:80])
+    r = http("DELETE", "/api/entries")
+    check("DELETE without a token is refused with 401", r[0] == 401, f"{r[0]} {r[1]}")
+    r = http("DELETE", "/api/entries", headers={"X-Admin-Token": "wrong-token"})
+    check("DELETE with a wrong token is refused with 401", r[0] == 401, f"{r[0]} {r[1]}")
+    r = http("DELETE", "/api/entries", headers={"X-Admin-Token": ""})
+    check("DELETE with an empty token is refused with 401", r[0] == 401, f"{r[0]} {r[1]}")
+    r = http("DELETE", "/api/entries?admin_token=" + TOKEN)
+    check("the token in the URL is not accepted (it would end up in logs)", r[0] == 401, f"{r[0]} {r[1]}")
+    r = http("DELETE", "/api/entries", headers={"Authorization": "Bearer " + TOKEN})
+    check("the token in an Authorization header is not accepted (only X-Admin-Token)", r[0] == 401, f"{r[0]} {r[1]}")
+    check("none of the refused DELETEs removed anything", http("GET", "/api/entries")[1] == before)
+    check("reading entries needs no token (GET is public by design)", http("GET", "/api/entries")[0] == 200)
+    r = http("DELETE", "/api/entries", headers={"X-Admin-Token": TOKEN})
+    check("DELETE with the right token succeeds", r[0] == 200 and r[1] == {"ok": True}, f"{r[0]} {r[1]}")
+    check("... and the entries are gone", http("GET", "/api/entries")[1] == [])
+    if OWN_SERVER:
+        store2 = os.path.join(tmp.name, "entries2.json")
+        json.dump([{"subject": "keep me"}], open(store2, "w"))
+        base2 = start_server({}, store2)             # a server started WITHOUT CAMPUS_ADMIN_TOKEN
+        r = http("DELETE", "/api/entries", base=base2)
+        check("a server with no CAMPUS_ADMIN_TOKEN set refuses DELETE with 403 (fails closed)", r[0] == 403 and "CAMPUS_ADMIN_TOKEN" in str(r[1]), f"{r[0]} {r[1]}")
+        r = http("DELETE", "/api/entries", headers={"X-Admin-Token": ""}, base=base2)
+        check("... even with an empty token header (empty must not match an unset token)", r[0] == 403, f"{r[0]} {r[1]}")
+        check("... and the entries were not deleted", http("GET", "/api/entries", base=base2)[1] == [{"subject": "keep me"}])
 finally:
-    if server:
-        server.terminate()
+    for proc in servers:
+        proc.terminate()
         try:
-            server.wait(10)
+            proc.wait(10)
         except subprocess.TimeoutExpired:
-            server.kill()
+            proc.kill()
     tmp.cleanup()
 
 print(f"\n{sum(results)}/{len(results)} checks passed")

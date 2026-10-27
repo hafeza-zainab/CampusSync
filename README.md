@@ -47,8 +47,8 @@ All commands are run from this folder (Windows; `py` is the Python launcher).
 | **Unit tests** (45 checks, includes "runs on OpenCV 5"; no server needed) | `cd vision` then `py tests/unit.py` |
 | **Accuracy tool** on the synthetic images (12 images) | `cd vision` then `py eval.py --dir samples` |
 | **Browser smoke test** (16 checks; server must be running) | `py -m pip install -r vision/requirements-dev.txt`, `py -m playwright install chromium`, then `cd vision` and `py tests/smoke_app.py` |
-| **Server rules** (upload limits and file types; 19 checks; starts its own server, no browser) | `cd vision` then `py tests/api_checks.py` |
-| **Full browser suite** (168 checks + 2 known unfixed bugs; server must be running) | `cd vision` then `py tests/e2e.py` (one part only: `py tests/e2e.py test_chat`) |
+| **Server rules** (upload limits, file types, admin token; 32 checks; starts its own server, no browser) | `cd vision` then `py tests/api_checks.py` |
+| **Full browser suite** (174 checks + 2 known unfixed bugs; server must be running **with** `CAMPUS_ADMIN_TOKEN` set, and the same value set when running the test) | start: `set CAMPUS_ADMIN_TOKEN=dev-token` then `py -m uvicorn main:app --port 8000`; test: `set CAMPUS_ADMIN_TOKEN=dev-token` then `py tests/e2e.py` (one part only: `py tests/e2e.py test_chat`) |
 | **Demo walkthrough** (9 checks, prints step timings; server must be running) | `cd vision` then `py tests/demo_walkthrough.py` |
 
 The dependencies are pinned to the versions that passed these tests on Windows with Python 3.14 (OpenCV 5.0.0 via `opencv-python-headless==5.0.0.93`). Other Python versions and other operating systems have not been tested. `vision/tests/e2e.py` and `vision/tests/demo_walkthrough.py` were brought up to date with the current app on the `post-submission` branch (password login, semester calendar, template-only chat, Import card in the Study Panel); the counts above are from that run.
@@ -64,7 +64,8 @@ The dependencies are pinned to the versions that passed these tests on Windows w
 
 ## Read before you rely on it
 - This is a **front-end demo**: data is stored in your browser (localStorage), not on a server database.
-- The demo passwords are written in plain text in `store.js`; this is **not secure authentication**.
+- The demo passwords are written in plain text in `store.js` (marked DEMO ONLY there); they protect nothing, and the roles (student / CR / ACR) are not security.
+- On the server side, `DELETE /api/entries` (clear all saved entries) needs the secret in the `CAMPUS_ADMIN_TOKEN` environment variable, sent as an `X-Admin-Token` header; if the variable is not set the call is refused. `GET /api/entries` and `POST /api/analyze` stay open to anyone who can reach the server, by design (the app has no server-side login), so keep the port private. Limits on uploads: 10 MB, PNG/JPG/PDF only, at most 10 PDF pages.
 - The chat uses **simulated users in one browser** with no server sync. It is not real-time chat between different computers.
 - The screenshot reader has been tested on **synthetic images only**; accuracy on real student screenshots has not been measured.
 

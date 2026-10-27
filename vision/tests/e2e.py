@@ -1,7 +1,8 @@
 """End-to-end checks: drives the real pages in a headless browser and prints PASS / FAIL for each claim.
 
 Run this after ANY code change (and before recording):
-    1. start the server in another terminal:   py -m uvicorn main:app --port 8000     (from the vision folder)
+    1. start the server in another terminal:   set CAMPUS_ADMIN_TOKEN=dev-token  then  py -m uvicorn main:app --port 8000     (from the vision folder)
+       and in THIS terminal set the same value:   set CAMPUS_ADMIN_TOKEN=dev-token   (clearing saved entries needs it)
     2. one-time install:                       py -m pip install playwright ; py -m playwright install chromium
     3. from the vision folder:                 py tests/e2e.py
 
@@ -19,6 +20,7 @@ import urllib.request
 
 from playwright.sync_api import sync_playwright
 
+ADMIN_TOKEN = os.environ.get("CAMPUS_ADMIN_TOKEN", "")      # the server's CAMPUS_ADMIN_TOKEN; needed to clear saved entries
 BASE = os.environ.get("CAMPUS_BASE", "http://localhost:8000")     # point it at another server to test a different checkout
 # Demo accounts: PLACEHOLDER college IDs (see store.js), not real people
 ID = {"Zainab": "DEMO-CS-001", "Aarav": "DEMO-CS-002", "Meera": "DEMO-CS-003", "Kabir": "DEMO-CS-004"}
@@ -56,7 +58,7 @@ def known_issue(name, cond, detail=""):
 
 
 def api(path, method="GET", data=None):
-    req = urllib.request.Request(BASE + path, data=data, method=method)
+    req = urllib.request.Request(BASE + path, data=data, method=method, headers={"X-Admin-Token": ADMIN_TOKEN} if ADMIN_TOKEN else {})
     with urllib.request.urlopen(req) as r:
         return json.load(r)
 
@@ -89,10 +91,17 @@ def new_page(ctx, errors):
     return pg
 
 
+def new_ctx(b, **kw):
+    """A browser context that knows the admin token, so the Vision page's 'Clear' button can delete saved entries."""
+    ctx = b.new_context(**kw)
+    ctx.add_init_script(f"try {{ localStorage.setItem('campussync.admintoken', {json.dumps(ADMIN_TOKEN)}); }} catch (e) {{}}")
+    return ctx
+
+
 def blank_ctx(b, **kw):
     """A browser context with the demo seed (demo.js) switched off: the four accounts start with no attendance,
     announcements or study items. The seeded behaviour itself is covered by tests/smoke_app.py."""
-    ctx = b.new_context(**kw)
+    ctx = new_ctx(b, **kw)
     ctx.add_init_script("try { localStorage.setItem('campussync.demoseed.v2', '1'); } catch (e) {}")
     return ctx
 
@@ -141,7 +150,7 @@ def test_api(b):
 def test_demo_flow(b):
     """The 60-second demo: Run demo -> boxes -> tagged entries."""
     errs, external = [], []
-    ctx = b.new_context(viewport={"width": 1400, "height": 1000})
+    ctx = new_ctx(b, viewport={"width": 1400, "height": 1000})
     pg = new_page(ctx, errs)
     pg.on("request", lambda r: not r.url.startswith(BASE) and not r.url.startswith(("data:", "blob:")) and external.append(r.url))
     pg.goto(BASE + "/vision"); pg.click("#clear"); pg.wait_for_timeout(300)
@@ -161,7 +170,7 @@ def test_demo_flow(b):
 
 def test_announcements(b):
     errs = []
-    ctx = b.new_context(viewport={"width": 1400, "height": 1100})
+    ctx = new_ctx(b, viewport={"width": 1400, "height": 1100})
     login_page = new_page(ctx, errs)
     login_page.goto(BASE + "/campus/"); login_as(login_page, "Zainab")   # Vision reads who is logged in
     pg = new_page(ctx, errs)
@@ -203,7 +212,7 @@ def test_announcements(b):
 
 def test_catalog(b):
     errs = []
-    ctx = b.new_context(viewport={"width": 1500, "height": 1000})
+    ctx = new_ctx(b, viewport={"width": 1500, "height": 1000})
     pg = new_page(ctx, errs)
     pg.goto(BASE + "/vision"); pg.click("#clear"); pg.wait_for_timeout(300)
     check("semester dropdown disabled until a course is picked", pg.is_disabled("#sem"))
@@ -552,7 +561,7 @@ def chat_send(pg, type_name, subject, topic):
 def test_chat(b):
     """Step E (option B): every chat message is a template (Subject / Date / Topic). No free-text box anywhere."""
     errs, dialogs = [], []
-    ctx = b.new_context(viewport={"width": 1366, "height": 768})
+    ctx = new_ctx(b, viewport={"width": 1366, "height": 768})
     z = chat_open(ctx, "Zainab", errs, dialogs)
     check("chat: old stub is gone (no handleResponse / Public-Private buttons)", "handleResponse" not in urllib.request.urlopen(BASE + "/campus/chatbot.html").read().decode())
     check("chat: the tab is built by chat.js and opens from the nav", z.locator("#chat").is_visible() and z.locator(".tab-nav button", has_text="Chat").count() == 1)
@@ -658,7 +667,7 @@ def test_chat(b):
 def test_chat_prefill(b):
     """Vision's 'Request notes' link on a lecture row pre-fills the chat's request form. It never sends."""
     errs, dialogs = [], []
-    ctx = b.new_context(viewport={"width": 1400, "height": 1000})
+    ctx = new_ctx(b, viewport={"width": 1400, "height": 1000})
     v = ctx.new_page()
     v.on("pageerror", lambda e: errs.append(str(e)[:100]))
     v.goto(BASE + "/vision"); v.click("#clear")
@@ -695,15 +704,42 @@ def test_chat_prefill(b):
     ctx.close()
 
 
+def test_clear_needs_token(b):
+    """The Vision page's Clear button: with the admin token it deletes the saved entries; without it, it only clears the screen and says so."""
+    if not ADMIN_TOKEN:
+        print("SKIP  CAMPUS_ADMIN_TOKEN is not set for this run, so the Clear-button token behaviour is not tested")
+        return
+    errs = []
+    api("/api/entries", "DELETE")
+    upload_api("notice.png")
+    check("setup: the server holds saved entries", len(api("/api/entries")) == 5)
+    ctx = b.new_context(viewport={"width": 1400, "height": 1000})      # NO token in this browser
+    pg = new_page(ctx, errs)
+    pg.goto(BASE + "/vision"); pg.wait_for_timeout(500)
+    check("the page lists the saved entries on load", pg.locator(".entry").count() == 5, str(pg.locator(".entry").count()))
+    pg.click("#clear"); pg.wait_for_timeout(500)
+    check("Clear without a token: the screen is cleared and the caption says the saved entries need the admin token (HTTP 401)",
+          pg.locator(".entry").count() == 0 and "admin token" in pg.inner_text("#capText") and "401" in pg.inner_text("#capText"), pg.inner_text("#capText"))
+    check("Clear without a token: the server still holds the 5 entries", len(api("/api/entries")) == 5)
+    pg.evaluate(f"localStorage.setItem('campussync.admintoken', {json.dumps(ADMIN_TOKEN)})")
+    pg.click("#clear"); pg.wait_for_timeout(500)
+    check("Clear with the token: the caption says 'Panel cleared' and the server's entries are deleted", pg.inner_text("#capText") == "Panel cleared" and api("/api/entries") == [], pg.inner_text("#capText"))
+    check("no page errors", not errs, str(errs))
+    ctx.close()
+
+
 def main():
     try:
         api("/api/entries")
     except Exception as e:
         raise SystemExit(f"Server not reachable at {BASE}: start it first (py -m uvicorn main:app --port 8000). {e}")
-    api("/api/entries", "DELETE")
+    try:
+        api("/api/entries", "DELETE")
+    except urllib.error.HTTPError as e:
+        raise SystemExit(f"Could not clear saved entries (HTTP {e.code}). Start the server with CAMPUS_ADMIN_TOKEN set and set the same value in this terminal.")
     with sync_playwright() as p:
         b = p.chromium.launch()
-        tests = (test_api, test_demo_flow, test_announcements, test_catalog, test_login, test_import, test_study, test_attendance, test_attendance_bridge, test_chat, test_chat_prefill)
+        tests = (test_api, test_demo_flow, test_announcements, test_catalog, test_login, test_import, test_study, test_attendance, test_attendance_bridge, test_chat, test_chat_prefill, test_clear_needs_token)
         only = sys.argv[1:]
         for test in tests:
             if only and test.__name__ not in only:

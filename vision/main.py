@@ -7,16 +7,17 @@ Endpoints
   GET    /api/catalog   courses / semesters / subjects (data/catalog.json)
   POST   /api/analyze   upload PNG/JPG/PDF, max 10 MB / 10 PDF pages (+ optional course, semester) -> detections + entries, auto-saved
   GET    /api/entries   everything saved so far (the Study Panel reads this)
-  DELETE /api/entries   clear all (handy before re-recording the demo)
+  DELETE /api/entries   clear all (handy before re-recording the demo). Needs the X-Admin-Token header = $CAMPUS_ADMIN_TOKEN
 """
 import base64
+import hmac
 import io
 import json
 import os
 
 import cv2
 from PIL import Image
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -135,7 +136,17 @@ def entries():
     return load_entries()
 
 
-@app.delete("/api/entries")
+def require_admin(x_admin_token: str = Header("")):
+    """Destructive actions need the secret in the CAMPUS_ADMIN_TOKEN environment variable, sent as the X-Admin-Token header.
+    If the variable is not set the action is switched off, so a forgotten setting fails closed, not open."""
+    expected = os.environ.get("CAMPUS_ADMIN_TOKEN", "")
+    if not expected:
+        raise HTTPException(403, "Admin actions are disabled: the server has no CAMPUS_ADMIN_TOKEN set.")
+    if not hmac.compare_digest(x_admin_token.encode(), expected.encode()):
+        raise HTTPException(401, "Admin token missing or wrong.")
+
+
+@app.delete("/api/entries", dependencies=[Depends(require_admin)])
 def clear():
     save_entries([])
     return {"ok": True}

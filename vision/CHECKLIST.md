@@ -17,7 +17,7 @@
 
 **3. Run the tests** (with the server running; the e2e run resets the saved entries)
 - `py tests/unit.py` → expect `45/45 checks passed`
-- `py tests/e2e.py` → expect `168/168 checks passed, 2 known issues not fixed`
+- `py tests/e2e.py` → expect `174/174 checks passed, 2 known issues not fixed` (server and test both need CAMPUS_ADMIN_TOKEN)
 - `py tests/demo_walkthrough.py` → expect `9/9 walkthrough checks passed` (runs the proposed integrated demo in order and prints step timings)
 - If either fails, don't record. Tell me which line failed.
 

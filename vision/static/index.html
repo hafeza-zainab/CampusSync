@@ -180,7 +180,14 @@ $('file').onchange = e => {
 ['dragover','dragenter'].forEach(ev => $('drop').addEventListener(ev, e => { e.preventDefault(); $('drop').classList.add('over'); }));
 ['dragleave','drop'].forEach(ev => $('drop').addEventListener(ev, e => { e.preventDefault(); $('drop').classList.remove('over'); }));
 $('drop').addEventListener('drop', e => e.dataTransfer.files[0] && run(e.dataTransfer.files[0]));
-$('clear').onclick = async () => { await fetch('/api/entries', {method:'DELETE'}); renderPanel([]); caption('Panel cleared'); };
+$('clear').onclick = async () => {
+  // deleting the saved entries needs the server's admin token (CAMPUS_ADMIN_TOKEN); set it once in this browser:
+  // localStorage.setItem('campussync.admintoken', '...'). Without it the screen is still cleared, and we say so.
+  const token = localStorage.getItem('campussync.admintoken') || '';
+  const res = await fetch('/api/entries', {method:'DELETE', headers: token ? {'X-Admin-Token': token} : {}});
+  renderPanel([]);
+  caption(res.ok ? 'Panel cleared' : 'Panel cleared on screen only: deleting the saved entries needs the admin token (HTTP ' + res.status + ')');
+};
 $('demo').onclick = async () => {
   const real = (catalog.courses || []).find(c => !c.placeholder);   // demo uses a real (non-placeholder) course
   if (real && real.semesters.length) { $('course').value = real.id; fillSemesters(); $('sem').value = real.semesters[0].id; updateScopeHint(); }

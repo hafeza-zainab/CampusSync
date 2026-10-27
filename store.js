@@ -44,8 +44,10 @@ function saveStore(name, value, suffix) {
 
 // ---------------------------------------------------------------- login: college IDs
 // DEMO accounts. These IDs are PLACEHOLDERS for the demo, not real people's college IDs.
-// The role (student / cr / acr) belongs to the account. DEMO ONLY: passwords sit in plain text here;
-// a real deployment must check them on a server.
+// The role (student / cr / acr) belongs to the account. DEMO ONLY: these passwords sit in plain text in a file every
+// visitor downloads, so they protect nothing. Do not reuse them anywhere, and do not treat the roles as security:
+// a real deployment must check logins on a server. (The server's own protection for destructive calls is the
+// CAMPUS_ADMIN_TOKEN environment variable, see vision/main.py; it is separate from these accounts.)
 const DEMO_USERS = [
   { id: "DEMO-CS-001", name: "Zainab", role: "cr", password: "cr-demo" },
   { id: "DEMO-CS-002", name: "Aarav", role: "acr", password: "acr-demo" },

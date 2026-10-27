@@ -1,6 +1,6 @@
 """Runs the PROPOSED integrated demo flow end to end in a headless browser and reports what happened and how long it took.
 
-    py tests/demo_walkthrough.py                       (server running; from the vision folder)
+    py tests/demo_walkthrough.py                       (server running with CAMPUS_ADMIN_TOKEN set, the same value set here; from the vision folder)
     DEMO_SHOTS=some\\folder py tests/demo_walkthrough.py   (also saves a screenshot of every step)
     CAMPUS_BASE=http://localhost:8001 py tests/demo_walkthrough.py   (test another server / checkout)
 
