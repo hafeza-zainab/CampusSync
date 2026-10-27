@@ -36,6 +36,11 @@ def teacher(text, trailing=False):
     return f["teacher"] or f["initials"]
 
 
+import cv2  # noqa: E402
+
+print("== OpenCV version")
+check("the code runs on OpenCV 5 (cv2 %s)" % cv2.__version__, cv2.__version__.split(".")[0], "5")
+
 print("== rooms")
 check("Room 301", rooms("Algebra Room 301"), "Room 301")
 check("Rm. 12", rooms("Algebra Rm. 12"), "Room 12")

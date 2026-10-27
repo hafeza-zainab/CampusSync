@@ -1,0 +1,4 @@
+# Only needed to run the browser tests (tests/smoke_app.py, tests/e2e.py, tests/chat_screenshots.py).
+# After installing:  py -m playwright install chromium
+-r requirements.txt
+playwright==1.64.1

@@ -34,6 +34,22 @@ It is **one product**: you open one address and everything is inside it.
 
 **If something does not work:** the app must be opened through the server (`http://localhost:8000/`), not by double-clicking `index.html`. If a button seems dead, restart the server. If `py` is not found, install Python from python.org and tick "Add to PATH".
 
+## Build, run and test
+
+All commands are run from this folder (Windows; `py` is the Python launcher).
+
+| Step | Command |
+|---|---|
+| **Install** (exact tested versions) | `py -m pip install -r requirements.txt` |
+| Install everything exactly as tested, including indirect packages | `py -m pip install -r requirements.lock.txt` |
+| **Run** | `run.bat`, or `cd vision` then `py -m uvicorn main:app --port 8000` |
+| Check the OpenCV version | `py -c "import cv2; print(cv2.__version__)"` prints `5.0.0` |
+| **Unit tests** (44 checks, includes "runs on OpenCV 5"; no server needed) | `cd vision` then `py tests/unit.py` |
+| **Accuracy tool** on the synthetic images (12 images) | `cd vision` then `py eval.py --dir samples` |
+| **Browser smoke test** (16 checks; server must be running) | `py -m pip install -r vision/requirements-dev.txt`, `py -m playwright install chromium`, then `cd vision` and `py tests/smoke_app.py` |
+
+The dependencies are pinned to the versions that passed these tests on Windows with Python 3.14 (OpenCV 5.0.0 via `opencv-python-headless==5.0.0.93`). Other Python versions and other operating systems have not been tested. `vision/tests/e2e.py` and `vision/tests/demo_walkthrough.py` were written for an earlier version of the app and no longer match it.
+
 ## What is in this folder
 | Path | What it is |
 |---|---|
