@@ -92,7 +92,14 @@ def clear():
 
 
 @app.get("/")
-def index():
+def home():
+    """CampusSync is one product: the front door is the app. Vision (the screenshot reader) is inside it."""
+    return RedirectResponse("/campus/")
+
+
+@app.get("/vision")
+def vision_page():
+    """The screenshot reader page. The app embeds it (Study Panel > Import from screenshot); it also works on its own."""
     return FileResponse(os.path.join(HERE, "static", "index.html"))
 
 
