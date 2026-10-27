@@ -1,5 +1,5 @@
 // DEMO DATA: gives each of the four demo accounts a different situation, so the app shows something
-// different per login. Runs once per browser (flag below) and replaces the attendance of the four demo accounts only; announcements and study items are added only if empty.
+// different per login. Runs once per browser (flag below) and replaces the attendance of the four demo accounts only; announcements and study items are added only if empty ("Reset demo data" empties them first).
 // To see it again: clear this site's localStorage. All names and IDs are placeholders.
 //
 //   DEMO-CS-001 Zainab (CR)      : excellent, about 90% in every subject, everything marked
@@ -11,7 +11,11 @@
   const FLAG = "campussync.demoseed.v2";
   // "Reset demo data" on the login screen: forget the flag, then the seed below runs again
   document.addEventListener("click", e => {
-    if (e.target && e.target.id === "resetDemo") { try { localStorage.removeItem(FLAG); } catch (x) { /* ignore */ } location.reload(); }
+    if (e.target && e.target.id === "resetDemo") {
+      // also forget test posts (announcements, study items), so the realistic seeded ones below come back
+      try { [FLAG, STORE_KEYS.announcements, STORE_KEYS.study].forEach(k => localStorage.removeItem(k)); } catch (x) { /* ignore */ }
+      location.reload();
+    }
   });
   try { if (localStorage.getItem(FLAG)) return; } catch (e) { return; }
 
