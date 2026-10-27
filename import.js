@@ -1,7 +1,7 @@
 // "Import from screenshot" inside the Study Panel tab (it is not a tab of its own).
 //
 // A collapsible card at the top of the Study Panel shows the Vision page (the screenshot reader) in an iframe.
-// Vision lives at the server root ("../" from /campus/). It saves its results into the same localStorage
+// Vision is served at /vision ("../vision" from /campus/). It saves its results into the same localStorage
 // keys the app already reads (timetable, announcements, study), and the app picks the changes up through
 // the browser's "storage" event (see the listener at the bottom of app.js), so nothing needs a page reload.
 //
@@ -36,7 +36,7 @@
   study.insertBefore(details, study.querySelector("h3").nextSibling);
 
   details.addEventListener("toggle", () => {
-    if (details.open && !frame.getAttribute("src")) frame.setAttribute("src", "../?embedded=1");   // hides Vision's own header
+    if (details.open && !frame.getAttribute("src")) frame.setAttribute("src", "../vision?embedded=1");   // hides Vision's own header
   });
 
   // the embedded Vision page reports how tall it is; the frame grows to fit, so the app page scrolls (not a box inside it)

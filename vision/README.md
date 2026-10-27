@@ -107,7 +107,7 @@ pip install -r requirements.txt        # tested in a fresh virtual environment o
 python make_sample.py                  # creates samples/ (synthetic test images)
 python -m uvicorn main:app --port 8000
 # the CampusSync app:  http://localhost:8000/campus/   (click "Run 60-second demo", or log in as DEMO-CS-001 / cr-demo)
-# Vision on its own:  http://localhost:8000/          (click "Run demo")
+# Vision on its own:  http://localhost:8000/vision    (click "Run demo")
 # restart the server after changing vision/main.py
 ```
 Chat screenshots (demo users, seeded messages) are in [`../chat_screenshots/`](../chat_screenshots), made by `py tests/chat_screenshots.py`.
