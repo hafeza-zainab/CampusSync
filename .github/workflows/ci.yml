@@ -1,0 +1,44 @@
+# Runs the checks that need no browser, on Linux, from the pinned requirements.txt.
+# (The browser suites need Playwright + Chromium and a running server; they are not run here.)
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: vision
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"        # the version the pinned packages were tested on (on Windows)
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            vision/requirements.txt
+
+      - name: System library for onnxruntime (OCR)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libgomp1
+        working-directory: .
+
+      - name: Install the pinned requirements
+        run: python -m pip install -r ../requirements.txt
+
+      - name: Show what was installed
+        run: python -c "import cv2, sys; print(sys.version); print('opencv', cv2.__version__)"
+
+      - name: Unit tests (45 checks, no server, no OCR model)
+        run: python tests/unit.py
+
+      - name: Accuracy on the 12 synthetic images (fails unless every entry is correct)
+        run: python eval.py --dir samples --strict
+
+      - name: Server rules (upload limits, admin token, /health, request log)
+        run: python tests/api_checks.py

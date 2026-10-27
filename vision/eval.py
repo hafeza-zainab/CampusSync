@@ -295,6 +295,7 @@ def main():
     ap.add_argument("--dir", default="real_samples", help="folder with images + .truth.json files")
     ap.add_argument("--topic-min", type=float, default=0.80, help="min topic similarity to count as correct")
     ap.add_argument("--task-min", type=float, default=0.70, help="min task similarity to count as correct")
+    ap.add_argument("--strict", action="store_true", help="exit with status 1 unless every expected entry is correct and nothing is missed, partial or extra (for CI)")
     args = ap.parse_args()
 
     folder = args.dir if os.path.isabs(args.dir) else os.path.join(HERE, args.dir)
@@ -312,6 +313,12 @@ def main():
     print(f"\n(written to {out_name})")
     if not rows:
         print("Nothing to evaluate. Put an image plus NAME.truth.json in", folder)
+    if args.strict:
+        bad = [r for r in rows if r["correct"] != r["expected"] or r["partial"] or r["missed"] or r["extra"]]
+        if not rows or bad:
+            print("STRICT: not every expected entry is correct" if rows else "STRICT: no labelled images found")
+            raise SystemExit(1)
+        print(f"STRICT: all {len(rows)} images fully correct")
 
 
 if __name__ == "__main__":
