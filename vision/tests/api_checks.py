@@ -50,8 +50,9 @@ def start_server(env_extra, store):
         port = sock.getsockname()[1]
     env = {k: v for k, v in os.environ.items() if k != "CAMPUS_ADMIN_TOKEN"}
     env.update(env_extra, CAMPUS_STORE=store)
+    out = open(os.path.join(tmp.name, f"server-{port}.out"), "w+b")      # a file, not a pipe: nobody reads the pipe, and a full pipe blocks the server
     proc = subprocess.Popen([sys.executable, "-m", "uvicorn", "main:app", "--port", str(port), "--log-level", "warning"],
-                            cwd=VISION, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+                            cwd=VISION, env=env, stdout=out, stderr=subprocess.STDOUT)
     servers.append(proc)
     url = f"http://127.0.0.1:{port}"
     for _ in range(120):
@@ -60,13 +61,15 @@ def start_server(env_extra, store):
             return url
         except Exception:
             if proc.poll() is not None:
-                sys.exit("server did not start:\n" + proc.stdout.read().decode(errors="replace"))
+                out.seek(0)
+                sys.exit("server did not start:\n" + out.read().decode(errors="replace"))
             time.sleep(1)
     sys.exit("server did not start in 120 s")
 
 
 OWN_SERVER = not os.environ.get("CAMPUS_BASE")
-BASE = os.environ.get("CAMPUS_BASE") or start_server({"CAMPUS_ADMIN_TOKEN": TOKEN}, STORE)
+LOG = os.path.join(tmp.name, "access.log")
+BASE = os.environ.get("CAMPUS_BASE") or start_server({"CAMPUS_ADMIN_TOKEN": TOKEN, "CAMPUS_LOG_FILE": LOG}, STORE)
 
 
 def http(method, path, data=None, headers=None, base=None):
@@ -168,6 +171,11 @@ try:
     check("a valid PDF is accepted and read (timetable, 11 entries)", r[0] == 200 and len(r[1]["entries"]) == 11, f"{r[0]} {str(r[1])[:120]}")
     r = post("timetable_exif6.jpg", sample("timetable_exif6.jpg"))
     check("a valid JPG is accepted and read (11 entries)", r[0] == 200 and len(r[1]["entries"]) == 11, f"{r[0]} {str(r[1])[:120]}")
+    print("== /health")
+    r = http("GET", "/health")
+    check("GET /health answers 200 with status ok and no problems (OCR model loaded, entries folder writable)", r[0] == 200 and r[1] == {"status": "ok", "problems": []}, f"{r[0]} {r[1]}")
+    check("/health needs no token and no login", r[0] == 200)
+
     print("== admin token (DELETE /api/entries)")
     before = http("GET", "/api/entries")[1]
     check("setup: there are saved entries to protect", isinstance(before, list) and len(before) > 0, str(before)[:80])
@@ -195,6 +203,30 @@ try:
         r = http("DELETE", "/api/entries", headers={"X-Admin-Token": ""}, base=base2)
         check("... even with an empty token header (empty must not match an unset token)", r[0] == 403, f"{r[0]} {r[1]}")
         check("... and the entries were not deleted", http("GET", "/api/entries", base=base2)[1] == [{"subject": "keep me"}])
+    if OWN_SERVER:
+        print("== request log")
+        # requests with things that must NOT end up in the log
+        post("secret_student_name.png", sample("notice.png"), course="private-course-id")
+        http("GET", "/api/entries?token=query-secret-123")
+        http("DELETE", "/api/entries", headers={"X-Admin-Token": "header-secret-456"})
+        http("GET", "/nope-not-found")
+        time.sleep(0.5)
+        raw = open(LOG, encoding="utf-8").read()
+        lines = [json.loads(x) for x in raw.splitlines() if x.strip()]
+        check("every log line is one JSON object with exactly: time, method, path, status, duration_ms",
+              len(lines) > 20 and all(set(x) == {"time", "method", "path", "status", "duration_ms"} for x in lines), str(lines[:1]))
+        want = lambda m, p, st: any(x["method"] == m and x["path"] == p and x["status"] == st for x in lines)
+        check("an accepted upload is logged as POST /api/analyze 200", want("POST", "/api/analyze", 200))
+        check("a rejected upload is logged with its status (415 and 413 both present)", want("POST", "/api/analyze", 415) and want("POST", "/api/analyze", 413))
+        check("a refused DELETE is logged as 401, an allowed one as 200", want("DELETE", "/api/entries", 401) and want("DELETE", "/api/entries", 200))
+        check("an unknown path is logged as 404, /health as 200", want("GET", "/nope-not-found", 404) and want("GET", "/health", 200))
+        check("durations are numbers >= 0 and the upload took longer than a health check",
+              all(isinstance(x["duration_ms"], (int, float)) and x["duration_ms"] >= 0 for x in lines)
+              and max(x["duration_ms"] for x in lines if x["path"] == "/api/analyze") > max(x["duration_ms"] for x in lines if x["path"] == "/health"))
+        check("the query string is not logged (no 'query-secret-123', no '?')", "query-secret-123" not in raw and not any("?" in x["path"] for x in lines))
+        check("no token is logged (neither the one sent, header-secret-456, nor the server's own)", "header-secret-456" not in raw and TOKEN not in raw and "wrong-token" not in raw)
+        check("no file name, form value, file content or extracted text is logged", not any(w in raw for w in ("secret_student_name", "private-course-id", "Dynamic Programming", "DAA", "notice.png", "PNG")))
+        check("no client IP address is logged", "127.0.0.1" not in raw and "::1" not in raw)
 finally:
     for proc in servers:
         proc.terminate()

@@ -4,6 +4,7 @@ Run:   py -m uvicorn main:app --port 8000      (from inside the vision folder)
 Open:  http://localhost:8000
 
 Endpoints
+  GET    /health        200 {"status":"ok"} when the OCR model is loaded and the entries folder is writable, else 503
   GET    /api/catalog   courses / semesters / subjects (data/catalog.json)
   POST   /api/analyze   upload PNG/JPG/PDF, max 10 MB / 10 PDF pages (+ optional course, semester) -> detections + entries, auto-saved
   GET    /api/entries   everything saved so far (the Study Panel reads this)
@@ -13,12 +14,15 @@ import base64
 import hmac
 import io
 import json
+import logging
 import os
+import sys
+import time
 
 import cv2
 from PIL import Image
-from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 import catalog
@@ -29,6 +33,34 @@ STORE = os.environ.get("CAMPUS_STORE") or os.path.join(HERE, "data", "entries.js
 os.makedirs(os.path.dirname(STORE), exist_ok=True)
 
 app = FastAPI(title="CampusSync Vision")
+
+# ---- request log: one JSON line per request, to stdout (and to CAMPUS_LOG_FILE if set) -------------------------------
+# Fields: time, method, path, status, duration_ms. Deliberately NOT logged: query string, headers (so no admin token),
+# request or response bodies (so no uploaded file contents or extracted text), file names, client IP address.
+access_log = logging.getLogger("campussync.access")
+access_log.setLevel(logging.INFO)
+access_log.propagate = False
+for _handler in [logging.StreamHandler(sys.stdout)] + ([logging.FileHandler(os.environ["CAMPUS_LOG_FILE"], encoding="utf-8")] if os.environ.get("CAMPUS_LOG_FILE") else []):
+    _handler.setFormatter(logging.Formatter("%(message)s"))
+    access_log.addHandler(_handler)
+
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    t0 = time.perf_counter()
+    status = 500                       # what it is if the handler crashes
+    try:
+        response = await call_next(request)
+        status = response.status_code
+        return response
+    finally:
+        access_log.info(json.dumps({
+            "time": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+            "method": request.method,
+            "path": request.url.path[:200],
+            "status": status,
+            "duration_ms": round((time.perf_counter() - t0) * 1000, 1),
+        }))
 
 # Limits for /api/analyze (override with environment variables if needed)
 MAX_UPLOAD_BYTES = int(os.environ.get("CAMPUS_MAX_UPLOAD_BYTES", 10 * 1024 * 1024))   # 10 MB
@@ -125,6 +157,21 @@ async def analyze(file: UploadFile = File(...), course: str = Form(""), semester
     return result
 
 
+ocr_ready = False      # set by warm_up() once the text-reading model has run once
+
+
+@app.get("/health")
+def health():
+    """For load balancers, Docker and uptime checks. 200 only if the OCR model is loaded and the entries file can be written."""
+    problems = []
+    if not ocr_ready:
+        problems.append("ocr model not loaded")
+    if not os.access(os.path.dirname(STORE), os.W_OK):
+        problems.append("entries folder not writable")
+    body = {"status": "ok" if not problems else "unhealthy", "problems": problems}
+    return JSONResponse(body, status_code=200 if not problems else 503)
+
+
 @app.get("/api/catalog")
 def get_catalog():
     """Courses -> semesters -> subjects, for the dropdowns. (Edit data/catalog.json to change it.)"""
@@ -191,5 +238,7 @@ app.mount("/samples", StaticFiles(directory=os.path.join(HERE, "samples")), name
 @app.on_event("startup")
 def warm_up():
     """Load the OCR model once at boot so the first upload (and the demo) is fast."""
+    global ocr_ready
     import numpy as np
     pipeline.run_ocr(np.full((64, 256, 3), 255, np.uint8))
+    ocr_ready = True
