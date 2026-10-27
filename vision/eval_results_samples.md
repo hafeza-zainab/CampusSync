@@ -2,14 +2,14 @@
 
 > **SYNTHETIC**: every image here was drawn by `make_sample.py`. These numbers test the code; they are not evidence of real-world accuracy.
 
-Run: 2026-10-27 07:40 · folder: `samples/` · fuzzy thresholds: topic >= 0.8, task >= 0.7 (difflib ratio)
+Run: 2026-10-27 07:42 · folder: `samples/` · fuzzy thresholds: topic >= 0.8, task >= 0.7 (difflib ratio)
 
 | image | type | scope (course/semester) | cells | expected | extracted | correct | partial | missed | extra | subject | day/time | teacher | room | seconds |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | notice.png | notice | -/- | 0 | 5 | 5 | 5 | 0 | 0 | 0 | 5/5 | 5/5 | – | – | 1.9 |
-| notice_scanned.pdf | notice | -/- | 0 | 5 | 5 | 5 | 0 | 0 | 0 | 5/5 | 5/5 | – | – | 4.4 |
+| notice_scanned.pdf | notice | -/- | 0 | 5 | 5 | 5 | 0 | 0 | 0 | 5/5 | 5/5 | – | – | 4.2 |
 | notice_teacher_room.png | notice | demo-a/sem1 | 0 | 2 | 2 | 2 | 0 | 0 | 0 | 2/2 | 2/2 | 2/2 | 2/2 | 1.6 |
-| notice_text.pdf | notice | -/- | 0 | 5 | 5 | 5 | 0 | 0 | 0 | 5/5 | 5/5 | – | – | 1.9 |
+| notice_text.pdf | notice | -/- | 0 | 5 | 5 | 5 | 0 | 0 | 0 | 5/5 | 5/5 | – | – | 2.0 |
 | timetable.png | timetable | -/- | 42 | 11 | 11 | 11 | 0 | 0 | 0 | 11/11 | 11/11 | – | – | 1.2 |
 | timetable_demo_new.png | timetable | -/- | 30 | 10 | 10 | 10 | 0 | 0 | 0 | 10/10 | 10/10 | – | – | 1.2 |
 | timetable_exif3.jpg | timetable | -/- | 42 | 11 | 11 | 11 | 0 | 0 | 0 | 11/11 | 11/11 | – | – | 0.9 |

@@ -104,7 +104,9 @@ Total: **100/100 entries**; subject 100/100, day/time 100/100, teacher 8/8, room
 - **Fairness note.** The OCR models and the date and name patterns were only exercised on English, printed, synthetic text. Performance on other scripts, handwriting or unusual layouts is unknown and could be worse; low-confidence flags and the review step are the safeguard, not a guarantee.
 
 ## 8. Deployment
-**Not deployed on AWS, and not deployed anywhere.** The project runs locally (`run.bat`, then `http://localhost:8000/`). No AWS service was used or tested. *(This section will be extended only if a deployment is actually made and tested.)*
+**Not deployed on AWS, and not deployed anywhere.** The project runs locally (`run.bat`, then `http://localhost:8000/`). No AWS service was used or tested.
+
+A `Dockerfile` and a step-by-step guide for one EC2 instance exist ([DEPLOY_AWS.md](DEPLOY_AWS.md)), but the image **has not been built or run**: Docker is not installed on the machine used for development, and the pinned packages were tested only on Windows with Python 3.14. The memory figure used for the suggested instance size (peak 734 MB) was measured on Windows, not Linux. *This section will be replaced with what was actually deployed and checked, only after a real deployment is made and its results are recorded.*
 
 ## 9. Reproducing the results
 ```

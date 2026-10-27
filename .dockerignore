@@ -1,0 +1,11 @@
+.git
+.gitignore
+**/__pycache__
+**/*.pyc
+vision/data/entries.json
+chat_screenshots
+docs
+*.md
+!vision/README.md
+run.bat
+requirements.lock.txt

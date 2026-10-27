@@ -57,4 +57,4 @@ flowchart TD
 5. **Storage.** The app has no database. Approved results are written to the browser's `localStorage`; every extracted entry is also added to the Study Panel store, with its source and a "check this" flag when confidence is under 0.80. The app reads these keys and updates through the browser's `storage` event.
 
 ## What is not in the diagram because it does not exist
-No AWS service, no container, no load balancer, no database server, no user accounts on a server, no message queue. See [TECHNICAL_REPORT.md](TECHNICAL_REPORT.md), section "Deployment".
+No AWS service, no running container (a `Dockerfile` exists but has not been built or run), no load balancer, no database server, no user accounts on a server, no message queue. See [TECHNICAL_REPORT.md](TECHNICAL_REPORT.md), section "Deployment".

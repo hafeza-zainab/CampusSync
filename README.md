@@ -50,6 +50,8 @@ All commands are run from this folder (Windows; `py` is the Python launcher).
 
 The dependencies are pinned to the versions that passed these tests on Windows with Python 3.14 (OpenCV 5.0.0 via `opencv-python-headless==5.0.0.93`). Other Python versions and other operating systems have not been tested. `vision/tests/e2e.py` and `vision/tests/demo_walkthrough.py` were written for an earlier version of the app and no longer match it.
 
+**Deployment:** the project is **not deployed on AWS** or anywhere else; it runs locally. A `Dockerfile` and an EC2 guide ([`docs/DEPLOY_AWS.md`](docs/DEPLOY_AWS.md)) are included but the image has **not been built or tested**. Technical report: [`docs/TECHNICAL_REPORT.md`](docs/TECHNICAL_REPORT.md); data-flow diagram: [`docs/architecture.md`](docs/architecture.md).
+
 ## What is in this folder
 | Path | What it is |
 |---|---|
