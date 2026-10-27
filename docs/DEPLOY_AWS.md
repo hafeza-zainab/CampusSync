@@ -1,12 +1,13 @@
 # Deploying CampusSync on AWS (one EC2 instance, Docker)
 
-> **Status: not deployed.** The `Dockerfile` in the project root was written but **has not been built or run by anyone yet** (Docker is not installed on the development machine). The packages were tested only on Windows with Python 3.14. Follow these steps, record what really happens, and only then update the "Deployment" section of [TECHNICAL_REPORT.md](TECHNICAL_REPORT.md) (see the end of this file).
+> **Status: not deployed on AWS.** Nothing here has been run on AWS. Docker is not installed on the development machine, so the image has never been built there. On the `post-submission` branch, a GitHub Actions job builds the `Dockerfile` and runs the container on a GitHub-hosted Ubuntu runner (build, `/health`, a sample upload, the admin token and a file-type rejection all succeeded in https://github.com/hafeza-zainab/CampusSync/actions/runs/40488930072); that shows the image works on a GitHub runner, not on EC2. Follow these steps, record what really happens, and only then update the "Deployment" section of [TECHNICAL_REPORT.md](TECHNICAL_REPORT.md) (see the end of this file).
 
 ## What you are deploying
 One container that runs the app and the screenshot reader together (`http://<address>:8000/`). It has **no login protection beyond the demo passwords, no HTTPS and no database**. Treat it as a temporary demo, not a service.
 
 **Read this first (security):**
-- Anyone who can reach port 8000 can use the app, upload images, and call `DELETE /api/entries`. The demo passwords are public in the code. **Restrict the port to your own IP address** (step 2) and **delete the instance when you are done**.
+- Anyone who can reach port 8000 can use the app and upload images (PNG/JPG/PDF, up to 10 MB and 10 PDF pages each) and read the saved entries. `DELETE /api/entries` needs the admin token (step 5); without `CAMPUS_ADMIN_TOKEN` it is switched off. The demo passwords are public in the code and protect nothing. **Restrict the port to your own IP address** (step 2) and **delete the instance when you are done**.
+- There is no rate limiting and no HTTPS. The admin token travels in plain HTTP, so only use it from a trusted network, or put HTTPS in front before using it for anything real.
 - Do not upload real student data.
 - The browser stores the app's data (localStorage), so it is per visitor; the server keeps only the extracted entries in a file inside the container (`vision/data/entries.json`), which is lost when the container is removed.
 
@@ -39,14 +40,15 @@ docker build -t campussync .
 
 **5. Run it**
 ```
-docker run -d --restart unless-stopped -p 8000:8000 --name campussync campussync
+docker run -d --restart unless-stopped -p 8000:8000 -e CAMPUS_ADMIN_TOKEN=<a long random string> --name campussync campussync
 docker logs -f campussync            # wait until it says "Application startup complete" (about 15-60 seconds)
 ```
 
 **6. Check that it works** (from your own computer, with your IP allowed)
 - Open `http://<public-ip>:8000/`: it should redirect to the app's login screen.
 - Log in as `DEMO-CS-001` / `cr-demo`, open **Study Panel**, open **Import from screenshot**, upload `vision/samples/timetable_demo_new.png`: you should see the table boxes and 10 lectures.
-- On the instance: `docker ps` should show the container as `healthy`.
+- On the instance: `curl http://localhost:8000/health` should print `{"status":"ok","problems":[]}`, and `docker ps` should show the container as `healthy`.
+- `docker logs campussync` shows one JSON line per request (method, path, status, duration; no file names, file contents, query strings, tokens or IP addresses).
 
 **7. Clean up when you are finished** (to stop charges)
 ```

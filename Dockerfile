@@ -1,10 +1,11 @@
 # CampusSync (the app + the screenshot reader) in one container.
 #
-# STATUS: written but NOT built or tested. Docker was not installed on the machine where this was written, and the
-# pinned packages were only tested on Windows with Python 3.14. See docs/DEPLOY_AWS.md for how to build and check it.
+# STATUS: never built on the author's machine (no Docker there). The CI job 'docker' in .github/workflows/ci.yml builds and
+# runs it on a GitHub Ubuntu runner (see docs/TECHNICAL_REPORT.md section 8 for the result). Not deployed on AWS.
+# Set CAMPUS_ADMIN_TOKEN to allow DELETE /api/entries; without it that call is refused.
 #
 #   docker build -t campussync .
-#   docker run -d -p 8000:8000 --name campussync campussync
+#   docker run -d -p 8000:8000 -e CAMPUS_ADMIN_TOKEN=<secret> --name campussync campussync
 #   open http://localhost:8000/
 FROM python:3.14-slim
 

@@ -73,7 +73,9 @@ Total: **100/100 entries**; subject 100/100, day/time 100/100, teacher 8/8, room
 - `tests/e2e.py`: 174 browser checks of the current app (needs the server started with `CAMPUS_ADMIN_TOKEN` and the same value in the test's environment) (API, Vision page, announcements, catalog, login and roles, the Import card, Study Panel, attendance and the semester calendar, timetable bridge, template chat), plus 2 **known bugs that are reported but not fixed** (below). Most of its browser tests run with the demo seed switched off so they start from a blank state; the seeded state is covered by `smoke_app.py`.
 - `tests/demo_walkthrough.py`: 9 checks that run the demo flow in order and time each step.
 - Known bug (found while updating the tests, not fixed): with no saved timetable, the Vision "replace timetable" preview compares against the Semester 4 default in `data.js`, not the Semester 5 timetable the calendar shows. A Semester 4 PDF is called "Already the same", and the preview says "removes 11" where the calendar has 10 weekly lectures.
-- Not tested: real data, browsers other than Chromium, phones, screen readers, any operating system other than Windows, any Python other than 3.14.
+- `tests/api_checks.py`: 44 checks over real HTTP against a server it starts itself (temporary entries file; no browser). Upload rules: size cap, empty file, file types by extension **and** file signature, extension/content mismatch, PDF page cap, image pixel cap, damaged PDF/PNG. Admin token on `DELETE /api/entries` (missing, wrong, empty, in the URL, in the wrong header, server without a token). `GET /health`. The request log (fields present; query string, tokens, file names, extracted text and client IP absent).
+- **Linux CI** (`.github/workflows/ci.yml`, GitHub Actions, ubuntu-latest, Python 3.14): installs the pinned `requirements.txt`, then runs `unit.py` (45), `eval.py --dir samples --strict` (all 12 images fully correct) and `api_checks.py` (44). All passed on Linux in the run for commit 0c938c7 (first run of the workflow). A second job builds the Dockerfile and runs the container; see section 8. Run for the later commit: https://github.com/hafeza-zainab/CampusSync/actions/runs/40488930072
+- Not tested: real data, browsers other than Chromium, phones, screen readers, Windows-only claims on Linux for the **browser** suites (smoke, e2e and the walkthrough have only been run on Windows; CI does not run them), any Python other than 3.14.
 
 ### 5.4 Failure cases (measured by `tests/measure.py` on synthetic images)
 | Input | What happens |
@@ -82,7 +84,8 @@ Total: **100/100 entries**; subject 100/100, day/time 100/100, teacher 8/8, room
 | Picture upside-down with **no** EXIF tag | 11 entries, several with garbled subject names |
 | Timetable drawn **without table lines** | one meaningless "notes" entry; not supported |
 | Handwriting | not tested; the OCR models are general printed-text models |
-| PDF with more than 3 pages | only the first 3 are read, only the first is previewed |
+| PDF with 4 to 10 pages | only the first 3 are read, only the first is previewed |
+| PDF with more than 10 pages | refused with HTTP 413 and a message (new on the `post-submission` branch) |
 
 ### 5.5 Bugs found by testing and fixed
 - RapidOCR's text-direction check turned the header `08-09` into `60-80` at 99.9% confidence (digits look alike when rotated 180°). It is now disabled (`use_cls=False`), which is why upside-down images without an EXIF tag are not supported.
@@ -94,7 +97,8 @@ Total: **100/100 entries**; subject 100/100, day/time 100/100, teacher 8/8, room
 - Orientation without an EXIF tag, tables without lines and long PDFs are not supported (5.4).
 - Dates are read day-first (`14/11/2026`); other formats, languages and layouts than those in the tests may be missed. Extraction is rule-based, not a language model.
 - **The app is a front-end demo:** data lives in each browser's `localStorage` (a few MB, editable by anyone with that browser profile), with no server database. Study files are limited to 1 MB.
-- **Passwords are demo-only:** they are written in plain text in `store.js` and shown on the login screen. This is **not** secure authentication.
+- **Passwords are demo-only:** they are written in plain text in `store.js` and shown on the login screen. This is **not** secure authentication, and the roles (student / CR / ACR) are not security.
+- **Server hardening is partial.** `DELETE /api/entries` needs `CAMPUS_ADMIN_TOKEN`. `POST /api/analyze` and `GET /api/entries` stay open to anyone who can reach the server (the app has no server-side login), so the port must stay private. There is no rate limiting, no HTTPS, and no limit on how many uploads one visitor can make. The size cap is applied after the web server has received the upload, so it limits memory and processing, not bandwidth or temporary disk use. PDFs of 4 to 10 pages are accepted but only the first 3 pages are read. The admin token is compared in constant time but failed attempts are not throttled.
 - **The chat uses simulated users in one browser with no server sync;** it is not real-time chat between devices.
 - Semesters 1-3, 5 and 6 in `data.js` are placeholders (invented dates and subjects).
 
@@ -108,7 +112,7 @@ Total: **100/100 entries**; subject 100/100, day/time 100/100, teacher 8/8, room
 ## 8. Deployment
 **Not deployed on AWS, and not deployed anywhere.** The project runs locally (`run.bat`, then `http://localhost:8000/`). No AWS service was used or tested.
 
-A `Dockerfile` and a step-by-step guide for one EC2 instance exist ([DEPLOY_AWS.md](DEPLOY_AWS.md)), but the image **has not been built or run**: Docker is not installed on the machine used for development, and the pinned packages were tested only on Windows with Python 3.14. The memory figure used for the suggested instance size (peak 734 MB) was measured on Windows, not Linux. *This section will be replaced with what was actually deployed and checked, only after a real deployment is made and its results are recorded.*
+A `Dockerfile` and a step-by-step guide for one EC2 instance exist ([DEPLOY_AWS.md](DEPLOY_AWS.md)). **Docker is not installed on the machine used for development, so the image has never been built or run there.** On the `post-submission` branch a GitHub Actions job (`docker` in `ci.yml`) builds the image on a GitHub-hosted Ubuntu runner and runs the container; for commit d40542c every step of that job succeeded (https://github.com/hafeza-zainab/CampusSync/actions/runs/40488930072): build, start, `/health` answering 200, the sample notice returning 5 entries from `POST /api/analyze`, `DELETE /api/entries` giving 401 without the token and 200 with it, and a fake `.png` refused with 415. I could not read the job's log text (it needs a GitHub login), so details such as Docker's own health status and the time to become healthy are not known to me. This shows the image works on a GitHub runner; it is **not** evidence about an EC2 instance. The memory figure used for the suggested instance size (peak 734 MB) was measured on Windows, not Linux. *This section will be replaced with what was actually deployed and checked, only after a real deployment is made and its results are recorded.*
 
 ## 9. Reproducing the results
 ```
@@ -116,11 +120,13 @@ py -m pip install -r requirements.txt                # exact tested versions
 py -c "import cv2; print(cv2.__version__)"           # 5.0.0
 cd vision
 py tests/unit.py                                     # 45 checks
-py eval.py --dir samples                             # 12 synthetic images, writes eval_results_samples.md
+py tests/api_checks.py                               # 44 checks (starts its own server)
+py eval.py --dir samples                             # 12 synthetic images, writes eval_results_samples.md (add --strict to fail on any miss)
 # browser smoke test: install vision/requirements-dev.txt, run `py -m playwright install chromium`,
 # start the server (run.bat), then:
 py tests/smoke_app.py                                # 16 checks
-py tests/e2e.py                                      # 168 checks + 2 known unfixed bugs
+# the e2e suite and the walkthrough need the server started with CAMPUS_ADMIN_TOKEN=<x> and the same value set in this terminal
+py tests/e2e.py                                      # 174 checks + 2 known unfixed bugs
 py tests/demo_walkthrough.py                         # 9 checks
 py tests/measure.py                                  # the failure cases in 5.4
 ```

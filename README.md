@@ -53,7 +53,7 @@ All commands are run from this folder (Windows; `py` is the Python launcher).
 
 The dependencies are pinned to the versions that passed these tests on Windows with Python 3.14 (OpenCV 5.0.0 via `opencv-python-headless==5.0.0.93`). Other Python versions and other operating systems have not been tested. `vision/tests/e2e.py` and `vision/tests/demo_walkthrough.py` were brought up to date with the current app on the `post-submission` branch (password login, semester calendar, template-only chat, Import card in the Study Panel); the counts above are from that run.
 
-**Deployment:** the project is **not deployed on AWS** or anywhere else; it runs locally. A `Dockerfile` and an EC2 guide ([`docs/DEPLOY_AWS.md`](docs/DEPLOY_AWS.md)) are included but the image has **not been built or tested**. Technical report: [`docs/TECHNICAL_REPORT.md`](docs/TECHNICAL_REPORT.md); data-flow diagram: [`docs/architecture.md`](docs/architecture.md).
+**Deployment:** the project is **not deployed on AWS** or anywhere else; it runs locally. A `Dockerfile` and an EC2 guide ([`docs/DEPLOY_AWS.md`](docs/DEPLOY_AWS.md)) are included. Docker is not installed on the author's PC; on the `post-submission` branch a GitHub Actions job builds and runs the image on a GitHub Linux runner, which is not a deployment on AWS. Technical report: [`docs/TECHNICAL_REPORT.md`](docs/TECHNICAL_REPORT.md); data-flow diagram: [`docs/architecture.md`](docs/architecture.md).
 
 ## What is in this folder
 | Path | What it is |
