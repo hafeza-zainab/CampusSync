@@ -47,8 +47,10 @@ All commands are run from this folder (Windows; `py` is the Python launcher).
 | **Unit tests** (45 checks, includes "runs on OpenCV 5"; no server needed) | `cd vision` then `py tests/unit.py` |
 | **Accuracy tool** on the synthetic images (12 images) | `cd vision` then `py eval.py --dir samples` |
 | **Browser smoke test** (16 checks; server must be running) | `py -m pip install -r vision/requirements-dev.txt`, `py -m playwright install chromium`, then `cd vision` and `py tests/smoke_app.py` |
+| **Full browser suite** (168 checks + 2 known unfixed bugs; server must be running) | `cd vision` then `py tests/e2e.py` (one part only: `py tests/e2e.py test_chat`) |
+| **Demo walkthrough** (9 checks, prints step timings; server must be running) | `cd vision` then `py tests/demo_walkthrough.py` |
 
-The dependencies are pinned to the versions that passed these tests on Windows with Python 3.14 (OpenCV 5.0.0 via `opencv-python-headless==5.0.0.93`). Other Python versions and other operating systems have not been tested. `vision/tests/e2e.py` and `vision/tests/demo_walkthrough.py` were written for an earlier version of the app and no longer match it.
+The dependencies are pinned to the versions that passed these tests on Windows with Python 3.14 (OpenCV 5.0.0 via `opencv-python-headless==5.0.0.93`). Other Python versions and other operating systems have not been tested. `vision/tests/e2e.py` and `vision/tests/demo_walkthrough.py` were brought up to date with the current app on the `post-submission` branch (password login, semester calendar, template-only chat, Import card in the Study Panel); the counts above are from that run.
 
 **Deployment:** the project is **not deployed on AWS** or anywhere else; it runs locally. A `Dockerfile` and an EC2 guide ([`docs/DEPLOY_AWS.md`](docs/DEPLOY_AWS.md)) are included but the image has **not been built or tested**. Technical report: [`docs/TECHNICAL_REPORT.md`](docs/TECHNICAL_REPORT.md); data-flow diagram: [`docs/architecture.md`](docs/architecture.md).
 

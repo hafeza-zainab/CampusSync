@@ -4,7 +4,7 @@
     DEMO_SHOTS=some\\folder py tests/demo_walkthrough.py   (also saves a screenshot of every step)
     CAMPUS_BASE=http://localhost:8001 py tests/demo_walkthrough.py   (test another server / checkout)
 
-The flow: log in -> Import tab: upload a timetable screenshot (boxes) -> confirm -> Calendar: mark lectures
+The flow: log in -> Study Panel > Import card: upload a timetable screenshot (boxes) -> confirm -> Calendar: mark lectures
 (green / red, stats) -> Import: upload a notice -> post as announcements -> Study Panel (tagged + filter) -> Chat template.
 
 It uses SYNTHETIC images and DEMO accounts. The timings are a script's (fast clicks); a person is slower.
@@ -38,7 +38,7 @@ def shot(pg, name):
 
 with sync_playwright() as p:
     browser = p.chromium.launch()
-    ctx = browser.new_context(viewport={"width": 1500, "height": 950})
+    ctx = e2e.blank_ctx(browser, viewport={"width": 1500, "height": 950})   # demo seed off: the counts below start from zero
     errs, dialogs = [], []
     app = ctx.new_page()
     app.on("pageerror", lambda e: errs.append(str(e)[:100]))
@@ -50,9 +50,7 @@ with sync_playwright() as p:
     step("1 login with a college ID")
 
     # 2. import a timetable screenshot: boxes, entries, preview
-    app.click(".tab-nav button >> text=Import from screenshot")
-    app.wait_for_function("document.getElementById('importFrame').contentDocument && document.getElementById('importFrame').contentDocument.getElementById('file')", timeout=15000)
-    vf = app.frame(url=e2e.re.compile("embedded=1"))
+    vf = e2e.open_import_card(app)
     vf.set_input_files("#file", os.path.join(S, "timetable_demo_new.png"))
     e2e.frame_done(vf)
     shot(app, "1_import_boxes_and_entries.png")
@@ -76,7 +74,7 @@ with sync_playwright() as p:
     step("4 attendance marked, green/red + stats")
 
     # 4. notice -> announcements
-    app.click(".tab-nav button >> text=Import from screenshot")
+    vf = e2e.open_import_card(app)
     vf.set_input_files("#file", os.path.join(S, "notice.png")); e2e.frame_done(vf)
     shot(app, "3_import_notice_review.png")
     vf.click("#postAll")

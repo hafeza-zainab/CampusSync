@@ -70,7 +70,9 @@ Total: **100/100 entries**; subject 100/100, day/time 100/100, teacher 8/8, room
 ### 5.3 Other tests
 - `tests/unit.py`: 45 checks of the extraction rules (patterns recognised and not recognised, the fuzzy-match limits, the confidence formula) and that OpenCV is version 5.
 - `tests/smoke_app.py`: 16 browser checks (headless Chromium) of the current app: login and roles, the Import card, notice to announcements, timetable to calendar, template-only chat, the semester calendar.
-- `tests/e2e.py` (169 checks) and `tests/demo_walkthrough.py` were written for an earlier version of the app and **no longer match it**; they are not evidence for the current app.
+- `tests/e2e.py`: 168 browser checks of the current app (API, Vision page, announcements, catalog, login and roles, the Import card, Study Panel, attendance and the semester calendar, timetable bridge, template chat), plus 2 **known bugs that are reported but not fixed** (below). Most of its browser tests run with the demo seed switched off so they start from a blank state; the seeded state is covered by `smoke_app.py`.
+- `tests/demo_walkthrough.py`: 9 checks that run the demo flow in order and time each step.
+- Known bug (found while updating the tests, not fixed): with no saved timetable, the Vision "replace timetable" preview compares against the Semester 4 default in `data.js`, not the Semester 5 timetable the calendar shows. A Semester 4 PDF is called "Already the same", and the preview says "removes 11" where the calendar has 10 weekly lectures.
 - Not tested: real data, browsers other than Chromium, phones, screen readers, any operating system other than Windows, any Python other than 3.14.
 
 ### 5.4 Failure cases (measured by `tests/measure.py` on synthetic images)
@@ -118,5 +120,7 @@ py eval.py --dir samples                             # 12 synthetic images, writ
 # browser smoke test: install vision/requirements-dev.txt, run `py -m playwright install chromium`,
 # start the server (run.bat), then:
 py tests/smoke_app.py                                # 16 checks
+py tests/e2e.py                                      # 168 checks + 2 known unfixed bugs
+py tests/demo_walkthrough.py                         # 9 checks
 py tests/measure.py                                  # the failure cases in 5.4
 ```

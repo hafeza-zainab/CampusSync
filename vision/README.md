@@ -111,7 +111,7 @@ python -m uvicorn main:app --port 8000
 # restart the server after changing vision/main.py
 ```
 Chat screenshots (demo users, seeded messages) are in [`../chat_screenshots/`](../chat_screenshots), made by `py tests/chat_screenshots.py`.
-Tests (with the server running): `py tests/unit.py`, `py tests/measure.py` (prints the measurements behind the limitations), and `py tests/smoke_app.py` (needs `pip install playwright` and `python -m playwright install chromium`). `tests/e2e.py` and `tests/demo_walkthrough.py` target an earlier version of the app. Accuracy tool: `py eval.py --dir samples` (synthetic) or `py eval.py` (your images in `real_samples/`).
+Tests (with the server running): `py tests/unit.py`, `py tests/measure.py` (prints the measurements behind the limitations), and `py tests/smoke_app.py` (needs `pip install playwright` and `python -m playwright install chromium`). `tests/e2e.py` (168 checks) and `tests/demo_walkthrough.py` (9 checks) drive the current app in the browser. Accuracy tool: `py eval.py --dir samples` (synthetic) or `py eval.py` (your images in `real_samples/`).
 Code walkthrough: [HOW_IT_WORKS.md](HOW_IT_WORKS.md) · Vision-only demo plan: [DEMO_SCRIPT.md](DEMO_SCRIPT.md) · Claim-by-claim evidence: [CLAIMS_AUDIT.md](CLAIMS_AUDIT.md)
 
 ## Built with

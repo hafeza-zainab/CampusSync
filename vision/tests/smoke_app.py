@@ -3,8 +3,8 @@ template-only chat, semester-aware calendar.
 
     py tests/smoke_app.py        (server running; from the vision folder; needs playwright + chromium)
 
-It uses synthetic images and the demo accounts. It is NOT the same as tests/e2e.py, which was written for an
-earlier version of the app and no longer matches it.
+It uses synthetic images and the demo accounts, with the demo seed ON. tests/e2e.py is the longer suite (most of it
+runs with the seed off).
 """
 import os
 import re
