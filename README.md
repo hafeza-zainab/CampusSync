@@ -44,7 +44,7 @@ All commands are run from this folder (Windows; `py` is the Python launcher).
 | Install everything exactly as tested, including indirect packages | `py -m pip install -r requirements.lock.txt` |
 | **Run** | `run.bat`, or `cd vision` then `py -m uvicorn main:app --port 8000` |
 | Check the OpenCV version | `py -c "import cv2; print(cv2.__version__)"` prints `5.0.0` |
-| **Unit tests** (44 checks, includes "runs on OpenCV 5"; no server needed) | `cd vision` then `py tests/unit.py` |
+| **Unit tests** (45 checks, includes "runs on OpenCV 5"; no server needed) | `cd vision` then `py tests/unit.py` |
 | **Accuracy tool** on the synthetic images (12 images) | `cd vision` then `py eval.py --dir samples` |
 | **Browser smoke test** (16 checks; server must be running) | `py -m pip install -r vision/requirements-dev.txt`, `py -m playwright install chromium`, then `cd vision` and `py tests/smoke_app.py` |
 
