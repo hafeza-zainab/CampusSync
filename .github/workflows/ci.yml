@@ -42,3 +42,47 @@ jobs:
 
       - name: Server rules (upload limits, admin token, /health, request log)
         run: python tests/api_checks.py
+
+  # Builds the Dockerfile and checks the running container. Docker is not installed on the author's PC, so this job is the
+  # only place the image is built and run.
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the image
+        run: docker build -t campussync .
+
+      - name: Run the container
+        run: docker run -d -p 8000:8000 -e CAMPUS_ADMIN_TOKEN=ci-token --name campussync campussync
+
+      - name: Wait for /health (the OCR model loads at start-up)
+        run: |
+          for i in $(seq 1 90); do
+            if curl -fsS http://localhost:8000/health; then echo; exit 0; fi
+            sleep 2
+          done
+          echo "container never became healthy"; docker logs campussync; exit 1
+
+      - name: POST a sample image to /api/analyze (the sample notice must give 5 entries)
+        run: |
+          curl -fsS -F "file=@vision/samples/notice.png" http://localhost:8000/api/analyze -o analyze.json
+          python3 -c "import json; d = json.load(open('analyze.json')); print(len(d['entries']), 'entries'); assert len(d['entries']) == 5"
+
+      - name: Admin token and file-type rules inside the container
+        run: |
+          test "$(curl -s -o /dev/null -w '%{http_code}' -X DELETE http://localhost:8000/api/entries)" = "401"
+          test "$(curl -s -o /dev/null -w '%{http_code}' -X DELETE -H 'X-Admin-Token: ci-token' http://localhost:8000/api/entries)" = "200"
+          echo "not an image" > fake.png
+          test "$(curl -s -o /dev/null -w '%{http_code}' -F 'file=@fake.png' http://localhost:8000/api/analyze)" = "415"
+
+      - name: Docker's own health status, and the request log
+        run: |
+          sleep 35
+          docker inspect --format 'docker health: {{.State.Health.Status}}' campussync
+          docker logs campussync 2>&1 | grep '"path"' | tail -5
+
+      - name: Container logs (always)
+        if: always()
+        run: docker logs campussync 2>&1 | tail -60
