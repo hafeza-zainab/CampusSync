@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>demo-tour example: a tiny to-do page</title>
+<style>
+  body { font: 16px system-ui, sans-serif; max-width: 520px; margin: 40px auto; }
+  li.done { text-decoration: line-through; color: #888; }
+  #stats { color: #555; }
+</style>
+</head>
+<body>
+  <h1>To-do</h1>
+  <p><button data-tour="start">▶ Run demo</button></p>
+
+  <input data-tour="new-item" placeholder="New task" aria-label="New task">
+  <button data-tour="add">Add</button>
+  <ul id="list"></ul>
+  <p id="stats" data-tour="stats"></p>
+  <button data-tour="clear-done">Clear finished</button>
+
+  <script src="demo-tour.js"></script>
+  <script>
+    // ---- the "app": items live in localStorage, like CampusSync's data does
+    const KEY = "example.todos";
+    const load = () => JSON.parse(localStorage.getItem(KEY) || "[]");
+    const save = items => localStorage.setItem(KEY, JSON.stringify(items));
+    function render() {
+      const items = load(), list = document.getElementById("list");
+      list.innerHTML = "";
+      items.forEach((it, i) => {
+        const li = document.createElement("li");
+        li.textContent = it.text; li.className = it.done ? "done" : "";
+        li.dataset.tour = "item-" + i;                       // stable hook for the tour
+        li.onclick = () => { const a = load(); a[i].done = !a[i].done; save(a); render(); };
+        list.append(li);
+      });
+      document.getElementById("stats").textContent = items.filter(i => i.done).length + " of " + items.length + " done";
+    }
+    const input = document.querySelector("[data-tour=new-item]");
+    document.querySelector("[data-tour=add]").onclick = () => {
+      if (!input.value.trim()) return;
+      save(load().concat({ text: input.value.trim(), done: false })); input.value = ""; render();
+    };
+    document.querySelector("[data-tour=clear-done]").onclick = () => { save(load().filter(i => !i.done)); render(); };
+    render();
+
+    // ---- the tour: seed() saves what the visitor had and puts in a known starting list; reset() puts the visitor's data back.
+    // (The tour even presses "Clear finished", which would delete the visitor's own ticked tasks, so a snapshot is needed.)
+    const TAG = " (demo)";
+    let snapshot = null;
+    window.__log = [];                                       // lets a test see the order seed / reset ran in
+    const params = new URLSearchParams(location.search);
+    const tour = DemoTour.create({
+      pace: Number(params.get("pace")) || 1,
+      seed()  { window.__log.push("seed");  snapshot = localStorage.getItem(KEY); save([{ text: "Sample task" + TAG, done: false }]); render(); },
+      reset() { window.__log.push("reset"); if (snapshot === null) localStorage.removeItem(KEY); else localStorage.setItem(KEY, snapshot); render(); },
+      steps: [
+        { caption: "A to-do page. The demo will use it like a person would." },
+        { caption: "Type a task", action: t => t.type("new-item", "Water the plants" + TAG), wait: 500 },
+        { caption: "Press Add",   action: t => t.click("add"), wait: 800 },
+        { caption: "Click a task to tick it off", action: async t => { await t.click("item-" + (load().length - 1)); }, wait: 800 },
+        { caption: "The counter updates", action: t => t.focus("stats", 1000), wait: 300 },
+        { caption: "Clear finished tasks", action: t => t.click("clear-done"), wait: 800 },
+        { caption: "That is the demo. Everything it added is removed now." }
+      ]
+    });
+    const startBtn = document.querySelector("[data-tour=start]");
+    startBtn.onclick = async () => { startBtn.disabled = true; await tour.start(); startBtn.disabled = false; };
+  </script>
+</body>
+</html>
